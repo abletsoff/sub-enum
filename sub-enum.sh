@@ -1,6 +1,7 @@
 #!/usr/bin/bash
 
 f_transparency () {
+	unset subs
 	json_data=$(curl "https://crt.sh/?q={$domain}&output=json" 2>/dev/null)
 	
 	# Retrieving CN certificate field 
@@ -15,60 +16,132 @@ f_transparency () {
 	transparency_subs=($(for sub in "${tmp_names[@]}"; \
        		do echo "${sub}"; done | sort -u))
 
-	echo "--- Certificate transparency ---"	
 	for sub in ${transparency_subs[@]}; do
 		if [ "$sub" != "$domain" ] && [ "$sub" != "*.$domain" ]; then
-		       	if [[ "$sub" == *"$domain"* ]]; then
-				echo $sub
-			else
-				related=(${related[@]} "$sub")
-			fi
+			f_related_decision $sub
 		fi
 	done
+	f_output "ctr.sh" "${subs[@]}" 
 }
 
 f_spf () {
+	unset subs
 	spf_record=$(dig TXT +short $domain | grep -P '^"v=spf1')
-	spf_a=$(echo $spf_record | grep -o "a:\S*" | cut -d ":" -f2)
-	
-	# include:
-	# redirect:
-	# ip4: (PTR enumeration)
+	spf_subs=$(echo $spf_record | grep -o -P "(a|include):\S*|redirect=\S*" \
+		| cut -d ":" -f2 | cut -d "=" -f2 | cut -d '"' -f1| sort -u)
 
-	echo "--- SPF ---"	
-	for sub in $spf_a; do
+	for sub in ${spf_subs[@]}; do
 		if [ "$sub" != "$domain" ]; then
-			echo $sub
+			f_related_decision $sub
 		fi
 	done
+	f_output "SPF" "${subs[@]}"	
 }
 
-f_tmp_related () {
-	echo "--- Related ---"
-	for sub in ${related[@]}; do
-		echo $sub
+f_mx () {
+	unset subs
+	mx_record="$(dig MX +short $domain)"
+	mx_subs=$(echo $mx_record | grep -o -P "\d \S*." |  cut -d " " -f2 | sed "s/.$//g")
+	for sub in ${mx_subs[@]}; do
+		f_related_decision $sub
 	done
+	f_output "MX" "${subs[@]}"	
 
+	
+}
+
+f_google () {
+	unset subs
+	user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0"
+	url_allowed="[A-z,0-9,\/,\-,_,\.,~,&,=,\?,:]"
+	html=$(curl -k -A "${user_agent}" \
+		"https://www.google.com/search?q=site:*.${domain}+-inurl:www.${domain}"`
+		`"${keyword_operator}&num=100" 2>/dev/null)
+	google_subs=$(echo $html | grep -o -P "https?:\/\/[a-z,0-9,\.,\-]*${domain}" \
+		| sed "s/ /\n/g" | cut -d "/" -f3 | sort -u)
+	for sub in "${google_subs[@]}"; do
+		subs=(${subs[@]} "$sub")
+	done
+	f_output "Google" "${subs[@]}"	
+}
+
+f_zone_transfer () {
+	echo "Zone transfer"
 }
 
 f_print_help () {
 	echo -e "Usage: sub-enum [options...] <domain>\n" \
-			 "-h\tdisplay this help and exit\n" \
-			 "-s\tSPF entry analyzing\n" \
-			 "-t\tCertificate transparancy check (crt.sh)\n"
-			 "-o\tMarkdown output"
+		"-h\tdisplay this help and exit\n" \
+		"-m\tMX entry analyzing\n" \
+		"-s\tSPF entry analyzing\n" \
+		"-g\tGoogle search\n" \
+		"-t\tCertificate transparancy check (crt.sh)\n" \
+		"-O\tMarkdown output\n" \
+		"-T\tTruncated output"
+}
+
+f_related_decision () {
+	sub=$1
+	if [[ "$sub" == *"$domain"* ]]; then
+		subs=(${subs[@]} "$sub")
+	else
+		related=(${related[@]} "$sub")
+	fi
 }
 
 f_output () {
-	
+	description=$1
+	shift 
+	subdomains=("$@")
 
+	for sub in ${subdomains[@]}; do
+
+		# Domain address resolving
+		resolve=$(dig $sub +short | sed -z "s/\n/, /g" | sed "s/, $//g")
+		if [[ $resolve = '' ]]; then
+			resolve="unresolved"
+		fi
+
+		# Avoiding duplicate entries
+		duplicate="false"
+		for p_sub in ${printed_subdomains[@]}; do
+			if [[ $sub = $p_sub ]]; then
+				duplicate="true"
+				break
+			fi
+		done
+	
+		if [[ $duplicate = "true" ]]; then
+			continue
+		else	
+			printed_subdomains=(${printed_subdomains[@]} "$sub")
+		fi
+		
+		# Output
+		if [[ $truncated_output = "true" ]]; then
+			sub=$(echo $sub | sed "s/\.$domain$//g")
+		fi	
+		if [[ $markdown_output = "true" ]]; then
+
+			echo "|$sub|$resolve|$description|"
+		else
+			echo "$sub - $resolve"
+		fi
+	done
 }
 
-while getopts "hst" opt; do
+while getopts "hmsgtOT" opt; do
 	case $opt in
-		s)	spf_check="true";;
-		t)	transparency_check="true";;
-		o)	markdown_output="true";;
+		m)	mx_check="true"
+			check="true";;
+		s)	spf_check="true"
+			check="true";;
+		g)	google_check="true"
+			check="true";;
+		t)	transparency_check="true"
+			check="true";;
+		O)	markdown_output="true";;
+		T)	truncated_output="true";;
 		h) 	f_print_help
 			exit;;
 		?) 	exit;;
@@ -79,13 +152,30 @@ shift $((OPTIND-1))
 domain=$1
 
 if [[ $domain != "" ]]; then
+	if [[ $markdown_output = "true" ]]; then
+		echo "|Domain|Resolve|Source|"
+		echo "|---|---|---|"
+	fi
+	if [[ $mx_check = "true" ]]; then
+		f_mx
+	fi
 	if [[ $spf_check = "true" ]]; then
 		f_spf
+	fi
+	if [[ $google_check = "true" ]]; then
+		f_google
 	fi
 	if [[ $transparency_check = "true" ]]; then
 		f_transparency
 	fi
-	f_tmp_related
+	if [[ $check != "true" ]]; then
+		f_mx
+		f_spf
+		f_google
+		f_transparency
+	fi
+
+	f_output "Related" "${related[@]}" 
 else
 	f_print_help
 fi

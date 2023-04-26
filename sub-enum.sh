@@ -77,6 +77,7 @@ f_print_help () {
 		"-g\tGoogle search\n" \
 		"-t\tCertificate transparancy check (crt.sh)\n" \
 		"-O\tMarkdown output\n" \
+		"-X\tExclude uresolved domains\n" \
 		"-T\tTruncated output"
 }
 
@@ -118,6 +119,9 @@ f_output () {
 		fi
 		
 		# Output
+		if [[ $resolve = "unresolved" ]] && [[ $exclude_uresolved = "true" ]]; then
+			continue
+		fi
 		if [[ $truncated_output = "true" ]]; then
 			sub=$(echo $sub | sed "s/\.$domain$//g")
 		fi	
@@ -130,7 +134,7 @@ f_output () {
 	done
 }
 
-while getopts "hmsgtOT" opt; do
+while getopts "hmsgtOXT" opt; do
 	case $opt in
 		m)	mx_check="true"
 			check="true";;
@@ -141,6 +145,7 @@ while getopts "hmsgtOT" opt; do
 		t)	transparency_check="true"
 			check="true";;
 		O)	markdown_output="true";;
+		X)	exclude_uresolved="true";;
 		T)	truncated_output="true";;
 		h) 	f_print_help
 			exit;;

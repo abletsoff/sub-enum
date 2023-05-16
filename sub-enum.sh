@@ -159,7 +159,7 @@ domain=$1
 if [[ $domain != "" ]]; then
 	if [[ $markdown_output = "true" ]]; then
 		echo "|Domain|Resolve|Source|"
-		echo "|---|---|---|"
+		echo "|:---:|:---:|:---:|"
 	fi
 	if [[ $mx_check = "true" ]]; then
 		f_mx

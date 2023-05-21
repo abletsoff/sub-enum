@@ -46,8 +46,6 @@ f_mx () {
 		f_related_decision $sub
 	done
 	f_output "MX" "${subs[@]}"	
-
-	
 }
 
 f_google () {
@@ -66,7 +64,12 @@ f_google () {
 }
 
 f_zone_transfer () {
-	echo "Zone transfer"
+	unset subs
+	nameservers=($(dig NS +short ${domain}))
+       	for nameserver in ${nameservers[@]}; do	
+		output=$(dig AXFR ${domain} @${nameserver})
+		echo $output
+	done
 }
 
 f_print_help () {
@@ -76,6 +79,7 @@ f_print_help () {
 		"-s\tSPF entry analyzing\n" \
 		"-g\tGoogle search\n" \
 		"-t\tCertificate transparancy check (crt.sh)\n" \
+		"-z\tZone transfering\n" \
 		"-O\tMarkdown output\n" \
 		"-X\tExclude uresolved domains\n" \
 		"-T\tTruncated output"
@@ -134,7 +138,7 @@ f_output () {
 	done
 }
 
-while getopts "hmsgtOXT" opt; do
+while getopts "hmsgtzOXT" opt; do
 	case $opt in
 		m)	mx_check="true"
 			check="true";;
@@ -143,6 +147,8 @@ while getopts "hmsgtOXT" opt; do
 		g)	google_check="true"
 			check="true";;
 		t)	transparency_check="true"
+			check="true";;
+		z)	zone_transfer="true"
 			check="true";;
 		O)	markdown_output="true";;
 		X)	exclude_uresolved="true";;
@@ -173,15 +179,18 @@ if [[ $domain != "" ]]; then
 	if [[ $transparency_check = "true" ]]; then
 		f_transparency
 	fi
+	if [[ $zone_transfer = "true" ]]; then
+		f_zone_transfer
+	fi
 	if [[ $check != "true" ]]; then
 		f_mx
 		f_spf
 		f_google
 		f_transparency
+		f_zone_transfer
 	fi
 
 	f_output "Related" "${related[@]}" 
 else
 	f_print_help
 fi
-

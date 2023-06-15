@@ -3,7 +3,6 @@
 domain_regex="(\w|\.|-|\*)*"
 
 f_transparency () {
-	unset subs
 	json_data=$(curl "https://crt.sh/?q={$domain}&output=json" 2>/dev/null)
 	
 	# Retrieving CN certificate field 
@@ -14,44 +13,34 @@ f_transparency () {
 	subject_alt_names=$(echo $json_data | grep -P -o '"name_value":"(\w|\.|-|\*|\\n)*"' | \
 		cut -d '"' -f 4 | sed 's/\\n/\n/g' | sort -u)
 		
-	tmp_names=("${common_names[@]}" "${subject_alt_names[@]}")
-	transparency_subs=($(for sub in "${tmp_names[@]}"; \
+	sum_names=("${common_names[@]}" "${subject_alt_names[@]}")
+	subs=($(for sub in "${sum_names[@]}"; \
        		do echo "${sub}"; done | sort -u))
 
-	for sub in ${transparency_subs[@]}; do
-		if [ "$sub" != "$domain" ] && [ "$sub" != "*.$domain" ]; then
-			f_related_decision $sub
-		fi
-	done
 	f_output "ctr.sh" "${subs[@]}" 
 }
 
 f_spf () {
-	unset subs
-	spf_record=$(dig TXT +short $domain | grep -P '^"v=spf1')
-	spf_subs=$(echo $spf_record | grep -o -P "(a|include):\S*|redirect=\S*" \
+	record=$(dig TXT +short $domain | grep -P '^"v=spf1')
+	subs=$(echo $record | grep -o -P "(a|include):\S*|redirect=\S*" \
 		| cut -d ":" -f2 | cut -d "=" -f2 | cut -d '"' -f1| sort -u)
-
-	for sub in ${spf_subs[@]}; do
-		if [ "$sub" != "$domain" ]; then
-			f_related_decision $sub
-		fi
-	done
 	f_output "SPF" "${subs[@]}"	
 }
 
 f_mx () {
-	unset subs
-	mx_record="$(dig MX +short $domain)"
-	mx_subs=$(echo $mx_record | grep -o -P "\d \S*." |  cut -d " " -f2 | sed "s/.$//g")
-	for sub in ${mx_subs[@]}; do
-		f_related_decision $sub
-	done
-	f_output "MX" "${subs[@]}"	
+	record=$(dig MX +short $domain)
+	subs=$(echo "$record" | grep -o -P "\d \S*." |  cut -d " " -f2 | sed "s/.$//g")
+	f_output "mx" "${subs[@]}"	
 }
 
+f_dmarc () {
+	record=$(dig TXT +short "_dmarc.${domain}")
+	subs=$(echo "$record" | grep -o -P "@${domain_regex}" | sed "s/@//g" \
+		| sort -u | uniq)
+	f_output "DMARC" "${subs[@]}"	
+
+}
 f_google () {
-	unset subs
 	user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0"
 	url_allowed="[A-z,0-9,\/,\-,_,\.,~,&,=,\?,:]"
 	html=$(curl -k -A "${user_agent}" \
@@ -63,17 +52,11 @@ f_google () {
 }
 
 f_zone_transfer () {
-	unset subs
 	nameservers=($(dig NS +short ${domain}))
        	for nameserver in ${nameservers[@]}; do	
 		axfr_response=$(dig AXFR ${domain} @${nameserver})
-		axfr_subs=$(echo "$axfr_response" | grep -o -P "${domain_regex}${domain}" \
+		subs=$(echo "$axfr_response" | grep -o -P "${domain_regex}${domain}" \
 		| sort -u | uniq)
-		for sub in ${axfr_subs[@]}; do
-			if [ "$sub" != "$domain" ]; then
-				subs=(${subs[@]} "$sub")
-			fi
-		done
 		f_output "Zone transfer" "${subs[@]}"
 	done
 }
@@ -81,8 +64,7 @@ f_zone_transfer () {
 f_print_help () {
 	echo -e "Usage: sub-enum [options...] <domain>\n" \
 		"-h\tdisplay this help and exit\n" \
-		"-m\tMX entry analyzing\n" \
-		"-s\tSPF entry analyzing\n" \
+		"-e\tE-mail DNS entries (MX, SPF, DMARC)\n" \
 		"-g\tGoogle search\n" \
 		"-t\tCertificate transparancy check (crt.sh)\n" \
 		"-z\tZone transfering\n" \
@@ -91,22 +73,12 @@ f_print_help () {
 		"-T\tTruncated output"
 }
 
-f_related_decision () {
-	sub=$1
-	if [[ "$sub" == *"$domain"* ]]; then
-		subs=(${subs[@]} "$sub")
-	else
-		related=(${related[@]} "$sub")
-	fi
-}
-
 f_output () {
 	description=$1
 	shift 
-	subdomains=("$@")
-
-	for sub in ${subdomains[@]}; do
-
+	subs=("$@")
+		
+	for sub in ${subs[@]}; do
 		# Domain address resolving
 		resolve=$(dig $sub +short | sed -z "s/\n/, /g" | sed "s/, $//g")
 		if [[ $resolve = '' ]]; then
@@ -116,16 +88,21 @@ f_output () {
 		# Avoiding duplicate entries
 		duplicate="false"
 		for p_sub in ${printed_subdomains[@]}; do
-			if [[ $sub = $p_sub ]]; then
+			if [[ "$sub" = "$p_sub" ]]; then
 				duplicate="true"
 				break
 			fi
 		done
-	
 		if [[ $duplicate = "true" ]]; then
 			continue
 		else	
 			printed_subdomains=(${printed_subdomains[@]} "$sub")
+		fi
+
+		# Process related domains
+		if [[ "$sub" != *"$domain"* ]]; then
+			related=(${related[@]} "$sub")
+			continue
 		fi
 		
 		# Output
@@ -146,11 +123,9 @@ f_output () {
 	done
 }
 
-while getopts "hmsgtzOXT" opt; do
+while getopts "hegtzOXT" opt; do
 	case $opt in
-		m)	mx_check="true"
-			check="true";;
-		s)	spf_check="true"
+		e)	email_check="true"
 			check="true";;
 		g)	google_check="true"
 			check="true";;
@@ -175,11 +150,12 @@ if [[ $domain != "" ]]; then
 		echo "|Domain|Resolve|Source|"
 		echo "|:---:|:---:|:---:|"
 	fi
-	if [[ $mx_check = "true" ]]; then
+	subs=($domain)
+	f_output "Domain" ${domain[@]}
+	if [[ $email_check = "true" ]]; then
 		f_mx
-	fi
-	if [[ $spf_check = "true" ]]; then
 		f_spf
+		f_dmarc
 	fi
 	if [[ $google_check = "true" ]]; then
 		f_google
@@ -193,12 +169,19 @@ if [[ $domain != "" ]]; then
 	if [[ $check != "true" ]]; then
 		f_mx
 		f_spf
+		f_dmarc
 		f_google
 		f_transparency
 		f_zone_transfer
 	fi
 
-	f_output "Related" "${related[@]}" 
+	if (( ${#related[@]} )); then
+		echo -ne "\nRelated domains:"
+		for r_domain in ${related[@]}; do
+			echo -n " $r_domain;"
+		done
+		echo
+	fi
 else
 	f_print_help
 fi

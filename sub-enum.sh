@@ -1,15 +1,17 @@
 #!/usr/bin/bash
 
+domain_regex="(\w|\.|-|\*)*"
+
 f_transparency () {
 	unset subs
 	json_data=$(curl "https://crt.sh/?q={$domain}&output=json" 2>/dev/null)
 	
 	# Retrieving CN certificate field 
-	common_names=$(echo $json_data | grep -P -o '"common_name":"(\w|\.|-|\*)*"' | \
+	common_names=$(echo $json_data | grep -P -o "\"common_name\":\"${domain_regex}\"" | \
 		cut -d '"' -f 4 | sort -u)
 	
 	# Retrieving SAN certificate field
-	subject_alt_names=$(echo $json_data | grep -P -o '"name_value":"(\w|\.|-|\*|\\)*"' | \
+	subject_alt_names=$(echo $json_data | grep -P -o '"name_value":"(\w|\.|-|\*|\\n)*"' | \
 		cut -d '"' -f 4 | sed 's/\\n/\n/g' | sort -u)
 		
 	tmp_names=("${common_names[@]}" "${subject_alt_names[@]}")
@@ -55,11 +57,8 @@ f_google () {
 	html=$(curl -k -A "${user_agent}" \
 		"https://www.google.com/search?q=site:*.${domain}+-inurl:www.${domain}"`
 		`"${keyword_operator}&num=100" 2>/dev/null)
-	google_subs=$(echo $html | grep -o -P "https?:\/\/[a-z,0-9,\.,\-]*${domain}" \
+	subs=$(echo $html | grep -o -P "https?:\/\/[a-z,0-9,\.,\-]*${domain}" \
 		| sed "s/ /\n/g" | cut -d "/" -f3 | sort -u)
-	for sub in "${google_subs[@]}"; do
-		subs=(${subs[@]} "$sub")
-	done
 	f_output "Google" "${subs[@]}"	
 }
 
@@ -67,8 +66,15 @@ f_zone_transfer () {
 	unset subs
 	nameservers=($(dig NS +short ${domain}))
        	for nameserver in ${nameservers[@]}; do	
-		output=$(dig AXFR ${domain} @${nameserver})
-		echo $output
+		axfr_response=$(dig AXFR ${domain} @${nameserver})
+		axfr_subs=$(echo "$axfr_response" | grep -o -P "${domain_regex}${domain}" \
+		| sort -u | uniq)
+		for sub in ${axfr_subs[@]}; do
+			if [ "$sub" != "$domain" ]; then
+				subs=(${subs[@]} "$sub")
+			fi
+		done
+		f_output "Zone transfer" "${subs[@]}"
 	done
 }
 
@@ -127,13 +133,15 @@ f_output () {
 			continue
 		fi
 		if [[ $truncated_output = "true" ]]; then
-			sub=$(echo $sub | sed "s/\.$domain$//g")
-		fi	
-		if [[ $markdown_output = "true" ]]; then
+			echo $sub
 
-			echo "|$sub|$resolve|$description|"
 		else
-			echo "$sub - $resolve"
+			if [[ $markdown_output = "true" ]]; then
+
+				echo "|$sub|$resolve|$description|"
+			else
+				echo "$sub - $resolve - $description"
+			fi
 		fi
 	done
 }

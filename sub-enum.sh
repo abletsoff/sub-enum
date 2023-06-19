@@ -14,9 +14,7 @@ f_transparency () {
 	subject_alt_names=$(echo $json_data | grep -P -o '"name_value":"(\w|\.|-|\*|\\n)*"' | \
 		cut -d '"' -f 4 | sed 's/\\n/\n/g' | sort -u)
 		
-	sum_names=("${common_names[@]}" "${subject_alt_names[@]}")
-	subs=($(for sub in "${sum_names[@]}"; \
-       		do echo "${sub}"; done | sort -u))
+	subs=("${common_names[@]}" "${subject_alt_names[@]}")
 
 	f_output "ctr.sh" "${subs[@]}" 
 }
@@ -24,7 +22,7 @@ f_transparency () {
 f_spf () {
 	record=$(dig TXT +short $domain | grep -P '^"v=spf1')
 	subs=$(echo $record | grep -o -P "(a|include):\S*|redirect=\S*" \
-		| cut -d ":" -f2 | cut -d "=" -f2 | cut -d '"' -f1| sort -u)
+		| cut -d ":" -f2 | cut -d "=" -f2 | cut -d '"' -f1)
 	f_output "SPF" "${subs[@]}"	
 }
 
@@ -36,8 +34,7 @@ f_mx () {
 
 f_dmarc () {
 	record=$(dig TXT +short "_dmarc.${domain}")
-	subs=$(echo "$record" | grep -o -P "@${domain_regex}" | sed "s/@//g" \
-		| sort -u | uniq)
+	subs=$(echo "$record" | grep -o -P "@${domain_regex}" | sed "s/@//g")
 	f_output "DMARC" "${subs[@]}"	
 
 }
@@ -48,7 +45,7 @@ f_google () {
 		"https://www.google.com/search?q=site:*.${domain}+-inurl:www.${domain}"`
 		`"${keyword_operator}&num=100" 2>/dev/null)
 	subs=$(echo $html | grep -o -P "https?:\/\/[a-z,0-9,\.,\-]*${domain}" \
-		| sed "s/ /\n/g" | cut -d "/" -f3 | sort -u)
+		| sed "s/ /\n/g" | cut -d "/" -f3)
 	f_output "Google" "${subs[@]}"	
 }
 
@@ -57,7 +54,7 @@ f_zone_transfer () {
        	for nameserver in ${nameservers[@]}; do	
 		axfr_response=$(dig AXFR ${domain} @${nameserver})
 		subs=$(echo "$axfr_response" | grep -o -P "${domain_regex}" \
-		| grep ${domain} | sort -u | uniq)
+		| grep ${domain})
 		f_output "Zone transfer" "${subs[@]}"
 	done
 }
@@ -71,15 +68,34 @@ f_ptr_lookup () {
 	f_output "PTR lookup" "${subs[@]}"
 }
 
-f_csp () {
+f_web () {
 	printed_subs=("$@")
 	for sub in ${printed_subs[@]}; do
-		csp_header=$(curl -A "$user_agent" -s -D - -o /dev/null -k -L ${sub} | \
-			grep --ignore-case "^Content-Security-Policy: ")
+		response=$(curl -A "$user_agent" -s -k -L -D - --connect-timeout 2 ${sub})
+		csp_header=$( echo "$response" | grep --ignore-case "^Content-Security-Policy: ")
 		csp_domains=$(echo $csp_header | grep --color -o -P "${domain_regex}")
-		subs=(${subs[@]} "${csp_domains[@]}")
+		csp_subs=(${csp_subs[@]} "${csp_domains[@]}")
+		html_domains=$(echo $response | grep -o -P "${domain_regex}" | grep "$domain")
+		html_subs=(${html_subs[@]} "${html_domains[@]}")
 	done
-	f_output "CSP" "${subs[@]}"
+
+	f_output "CSP" "${csp_subs[@]}"
+	f_output "HTML" "${html_subs[@]}"
+}
+
+f_ip () {
+	for resolve in ${ip_addresses[@]}; do
+		ip_check=$(echo $resolve | grep -o -P "([1-2]?\d{1,2}\.){3}[1-2]?\d{1,2}")
+		if [[ "$ip_check" == "" ]]; then
+			resolve=$(echo "$resolve" | sed "s/\.$//g")
+			subs=(${subs[@]} "$resolve")
+			continue
+		fi
+	done
+	# for sub in ${subs[@]}; do 
+	# 	echo $sub
+	# done
+	f_output "CNAME" "${subs[@]}" # Correct it: Related domains are not displayed
 }
 
 f_print_help () {
@@ -90,40 +106,43 @@ f_print_help () {
 		"-t\tCertificate transparancy check (crt.sh)\n" \
 		"-z\tZone transfering\n" \
 		"-p\tPTR lookup\n" \
-		"-c\tContent-Security-Policy analyzing\n" \
+		"-w\tHTTP headers and HTML page source analyzing\n" \
 		"-O\tMarkdown output\n" \
 		"-X\tExclude uresolved domains\n" \
 		"-T\tTruncated output"
 }
 
+f_resolve () {
+	sub=$1
+	resolve=$(dig +short "$sub")
+	if [[ $resolve = '' ]]; then
+		resolve="unresolved"
+	else
+		for resolved_ip in ${resolve[@]}; do
+			duplicate="false"
+			for ip in ${ip_addresses[@]}; do
+				if [[ "$ip" == "$resolved_ip" ]]; then
+					duplicate="true"
+					break
+				fi
+			done
+			if [[ "$duplicate" == "false" ]]; then
+				ip_addresses=(${ip_addresses[@]} "$resolved_ip")
+			fi
+		done
+	fi
+
+	resolve=$(echo "$resolve" | sed -z "s/\n/, /g" | sed "s/, $//g")
+}
+
 f_output () {
 	description=$1
 	shift 
-	subs=("$@")
+	unsorted_subs=("$@")
+	subs=($(for sub in "${unsorted_subs[@]}"; \
+       		do echo "${sub}"; done | sort -u))
 		
 	for sub in ${subs[@]}; do
-		# Domain address resolving
-		#===Need to handle CNAME resolve troubles===
-		resolve=$(dig +short "$sub")
-		if [[ $resolve = '' ]]; then
-			resolve="unresolved"
-		else
-			for resolved_ip in ${resolve[@]}; do
-				duplicate="false"
-				for ip in ${ip_addresses[@]}; do
-					if [[ "$ip" == "$resolved_ip" ]]; then
-						duplicate="true"
-						break
-					fi
-				done
-				if [[ "$duplicate" == "false" ]]; then
-					ip_addresses=(${ip_addresses[@]} "$resolved_ip")
-				fi
-			done
-		fi
-
-		resolve=$(echo "$resolve" | sed -z "s/\n/, /g" | sed "s/, $//g")
-
 		# Avoiding duplicate entries
 		duplicate="false"
 		for p_sub in ${printed_subdomains[@]}; do
@@ -144,6 +163,8 @@ f_output () {
 			continue
 		fi
 		
+		f_resolve $sub
+
 		# Output
 		if [[ $resolve = "unresolved" ]] && [[ $exclude_uresolved = "true" ]]; then
 			continue
@@ -162,7 +183,7 @@ f_output () {
 	done
 }
 
-while getopts "hegtzpcOXT" opt; do
+while getopts "hegtzpwOXT" opt; do
 	case $opt in
 		e)	email_check="true"
 			check="true";;
@@ -173,7 +194,7 @@ while getopts "hegtzpcOXT" opt; do
 		z)	zone_transfer="true"
 			check="true";;
 		p)	ptr_lookup="true";;
-		c)	csp="true"
+		w)	web="true"
 			check="true";;
 		O)	markdown_output="true";;
 		X)	exclude_uresolved="true";;
@@ -208,8 +229,8 @@ if [[ $domain != "" ]]; then
 	if [[ $zone_transfer = "true" ]]; then
 		f_zone_transfer
 	fi
-	if [[ $csp = "true" ]]; then
-		f_csp "${printed_subdomains[@]}"
+	if [[ $web = "true" ]]; then
+		f_web "${printed_subdomains[@]}"
 	fi
 	if [[ $ptr_lookup = "true" ]]; then
 		f_ptr_lookup "${ip_addresses[@]}"
@@ -221,6 +242,7 @@ if [[ $domain != "" ]]; then
 		f_google
 		f_transparency
 		f_zone_transfer
+		f_web "${printed_subdomains[@]}"
 		f_ptr_lookup "${ip_addresses[@]}"
 	fi
 
@@ -231,6 +253,8 @@ if [[ $domain != "" ]]; then
 		done
 		echo ""
 	fi
+
+	f_ip
 
 else
 	f_print_help

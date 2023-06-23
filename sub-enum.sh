@@ -157,10 +157,8 @@ f_output () {
 			printed_subdomains=(${printed_subdomains[@]} "$sub")
 		fi
 
-		# Process related domains
 		if [[ "$sub" != *"$domain"* ]]; then
-			related=(${related[@]} "$sub")
-			continue
+			related='true'
 		fi
 		
 		f_resolve $sub
@@ -175,12 +173,36 @@ f_output () {
 		else
 			if [[ $markdown_output = "true" ]]; then
 
-				echo "|$sub|$resolve|$description|"
+				output="|$sub|$resolve|$description|"
 			else
-				echo "$sub - $resolve - $description"
+				output="$sub - $resolve - $description"
 			fi
 		fi
+
+		if [[ $related == '' ]]; then
+			echo "$output"
+		else
+			related_output=("${related_output[@]}" "$output")
+			related=''
+		fi
+
 	done
+}
+
+f_related_output () {
+	if (( ${#related_output[@]} )); then
+		echo ""
+		if [[ $markdown_output = "true" ]]; then
+			echo "|Related domain|Resolve|Source|"
+			echo "|:---:|:---:|:---:|"
+		else
+			echo "Related:"
+		fi
+
+		for r_output in "${related_output[@]}"; do
+			echo "$r_output"
+		done
+	fi
 }
 
 while getopts "hegtzpwOXT" opt; do
@@ -245,15 +267,8 @@ if [[ $domain != "" ]]; then
 		f_web "${printed_subdomains[@]}"
 		f_ptr_lookup "${ip_addresses[@]}"
 	fi
-
-	if (( ${#related[@]} )); then
-		echo -ne "\nRelated domains:"
-		for r_domain in ${related[@]}; do
-			echo -n " $r_domain;"
-		done
-		echo ""
-	fi
-
+	
+	f_related_output
 	f_ip
 
 else

@@ -16,26 +16,26 @@ f_transparency () {
 		
 	subs=("${common_names[@]}" "${subject_alt_names[@]}")
 
-	f_output "ctr.sh" "${subs[@]}" 
+	f_parsing "ctr.sh" "${subs[@]}" 
 }
 
 f_spf () {
 	record=$(dig TXT +short $domain | grep -P '^"v=spf1')
 	subs=$(echo $record | grep -o -P "(a|include):\S*|redirect=\S*" \
 		| cut -d ":" -f2 | cut -d "=" -f2 | cut -d '"' -f1)
-	f_output "SPF" "${subs[@]}"	
+	f_parsing "SPF" "${subs[@]}"	
 }
 
 f_mx () {
 	record=$(dig MX +short $domain)
 	subs=$(echo "$record" | grep -o -P "\d \S*." |  cut -d " " -f2 | sed "s/.$//g")
-	f_output "mx" "${subs[@]}"	
+	f_parsing "mx" "${subs[@]}"	
 }
 
 f_dmarc () {
 	record=$(dig TXT +short "_dmarc.${domain}")
 	subs=$(echo "$record" | grep -o -P "@${domain_regex}" | sed "s/@//g")
-	f_output "DMARC" "${subs[@]}"	
+	f_parsing "DMARC" "${subs[@]}"	
 
 }
 f_google () {
@@ -46,7 +46,7 @@ f_google () {
 		`"${keyword_operator}&num=100" 2>/dev/null)
 	subs=$(echo $html | grep -o -P "https?:\/\/[a-z,0-9,\.,\-]*${domain}" \
 		| sed "s/ /\n/g" | cut -d "/" -f3)
-	f_output "Google" "${subs[@]}"	
+	f_parsing "Google" "${subs[@]}"	
 }
 
 f_zone_transfer () {
@@ -55,7 +55,7 @@ f_zone_transfer () {
 		axfr_response=$(dig AXFR ${domain} @${nameserver})
 		subs=$(echo "$axfr_response" | grep -o -P "${domain_regex}" \
 		| grep ${domain})
-		f_output "Zone transfer" "${subs[@]}"
+		f_parsing "Zone transfer" "${subs[@]}"
 	done
 }
 
@@ -65,7 +65,7 @@ f_ptr_lookup () {
 		record=$(dig +short -x $ip | sed "s/\.$//g")
 		subs=(${subs[@]} "$record")
 	done
-	f_output "PTR lookup" "${subs[@]}"
+	f_parsing "PTR lookup" "${subs[@]}"
 }
 
 f_web () {
@@ -79,11 +79,11 @@ f_web () {
 		html_subs=(${html_subs[@]} "${html_domains[@]}")
 	done
 
-	f_output "CSP" "${csp_subs[@]}"
-	f_output "HTML" "${html_subs[@]}"
+	f_parsing "CSP" "${csp_subs[@]}"
+	f_parsing "HTML" "${html_subs[@]}"
 }
 
-f_ip () {
+f_ip_parsing () {
 	for resolve in ${ip_addresses[@]}; do
 		whois=$(whois -B $resolve)
 		inetnum=$(echo "$whois" | grep -P "^inetnum:" | grep -P -o "\d.*$")
@@ -173,7 +173,7 @@ f_resolve () {
 
 }
 
-f_output () {
+f_parsing () {
 	description=$1
 	shift 
 	unsorted_subs=("$@")
@@ -227,7 +227,7 @@ f_output () {
 	done
 }
 
-f_related_output () {
+f_related_parsing () {
 	if (( ${#related_output[@]} )); then
 		echo ""
 		if [[ $markdown_output = "true" ]]; then
@@ -276,7 +276,7 @@ if [[ $domain != "" ]]; then
 		echo "Subdomains:"
 	fi
 	subs=($domain)
-	f_output "Domain" ${domain[@]}
+	f_parsing "Domain" ${domain[@]}
 	if [[ $email_check = "true" ]]; then
 		f_mx
 		f_spf
@@ -308,9 +308,9 @@ if [[ $domain != "" ]]; then
 		f_ptr_lookup "${ip_addresses[@]}"
 	fi
 	
-	f_output "CNAME" "${cname_subs[@]}"
-	f_ip
-	f_related_output
+	f_parsing "CNAME" "${cname_subs[@]}"
+	f_ip_parsing
+	f_related_parsing
 
 else
 	f_print_help

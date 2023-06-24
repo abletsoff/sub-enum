@@ -85,17 +85,42 @@ f_web () {
 
 f_ip () {
 	for resolve in ${ip_addresses[@]}; do
-		ip_check=$(echo $resolve | grep -o -P "([1-2]?\d{1,2}\.){3}[1-2]?\d{1,2}")
-		if [[ "$ip_check" == "" ]]; then
-			resolve=$(echo "$resolve" | sed "s/\.$//g")
-			subs=(${subs[@]} "$resolve")
-			continue
+		whois=$(whois -B $resolve)
+		inetnum=$(echo "$whois" | grep -P "^inetnum:" | grep -P -o "\d.*$")
+		netname=$(echo "$whois" | grep -P "^netname:" | cut -d ":" -f2 \
+			| grep -P -o "\S*$")
+		country=$(echo "$whois" | grep -P "^country:" | cut -d ":" -f2 \
+		       	| grep -P -o "\S*$" | head -n 1)
+
+		if [[ $markdown_output = "true" ]]; then
+			whois_data="|$inetnum|$netname|$country|"
+		else
+			whois_data="$inetnum - $netname - $country"
+		fi
+
+		duplicate=""
+		for ip_range in "${ip_ranges[@]}"; do
+			if [[ "$ip_range" == "$whois_data" ]]; then
+				duplicate="true"
+				break
+			fi
+		done
+		
+		if [[ $duplicate == "" ]]; then
+			ip_ranges=("${ip_ranges[@]}" "$whois_data")
 		fi
 	done
-	# for sub in ${subs[@]}; do 
-	# 	echo $sub
-	# done
-	f_output "CNAME" "${subs[@]}" # Correct it: Related domains are not displayed
+	
+	echo
+	if [[ $markdown_output = "true" ]]; then
+		echo "|Inetnum|Netname|Country|"
+		echo "|:---:|:---:|:---:|"
+	else
+		echo "IP ranges:"
+	fi
+	for ip_range in "${ip_ranges[@]}"; do
+		echo $ip_range
+	done
 }
 
 f_print_help () {
@@ -115,24 +140,37 @@ f_print_help () {
 f_resolve () {
 	sub=$1
 	resolve=$(dig +short "$sub")
+
 	if [[ $resolve = '' ]]; then
 		resolve="unresolved"
 	else
 		for resolved_ip in ${resolve[@]}; do
-			duplicate="false"
+			duplicate=""
+			
 			for ip in ${ip_addresses[@]}; do
 				if [[ "$ip" == "$resolved_ip" ]]; then
 					duplicate="true"
 					break
 				fi
 			done
-			if [[ "$duplicate" == "false" ]]; then
-				ip_addresses=(${ip_addresses[@]} "$resolved_ip")
+
+			if [[ "$duplicate" == "" && "$related_domain" == "" ]]; then
+				ip_check=$(echo $resolved_ip \
+				       | grep -o -P "([1-2]?\d{1,2}\.){3}[1-2]?\d{1,2}")
+
+				if [[ $ip_check == "" ]]; then
+					cname_subs=(${cname_subs[@]} \
+						$(echo $resolved_ip | sed 's/\.$//g'))
+				else
+					ip_addresses=(${ip_addresses[@]} "$resolved_ip")
+				fi
+
 			fi
 		done
+
+		resolve=$(echo "$resolve" | sed -z "s/\n/, /g" | sed "s/, $//g")
 	fi
 
-	resolve=$(echo "$resolve" | sed -z "s/\n/, /g" | sed "s/, $//g")
 }
 
 f_output () {
@@ -158,7 +196,7 @@ f_output () {
 		fi
 
 		if [[ "$sub" != *"$domain"* ]]; then
-			related='true'
+			related_domain='true'
 		fi
 		
 		f_resolve $sub
@@ -179,11 +217,11 @@ f_output () {
 			fi
 		fi
 
-		if [[ $related == '' ]]; then
+		if [[ $related_domain == '' ]]; then
 			echo "$output"
 		else
 			related_output=("${related_output[@]}" "$output")
-			related=''
+			related_domain=''
 		fi
 
 	done
@@ -196,7 +234,7 @@ f_related_output () {
 			echo "|Related domain|Resolve|Source|"
 			echo "|:---:|:---:|:---:|"
 		else
-			echo "Related:"
+			echo "Related domains:"
 		fi
 
 		for r_output in "${related_output[@]}"; do
@@ -232,8 +270,10 @@ domain=$1
 
 if [[ $domain != "" ]]; then
 	if [[ $markdown_output = "true" ]]; then
-		echo "|Domain|Resolve|Source|"
+		echo "|Subdomain|Resolve|Source|"
 		echo "|:---:|:---:|:---:|"
+	else
+		echo "Subdomains:"
 	fi
 	subs=($domain)
 	f_output "Domain" ${domain[@]}
@@ -268,8 +308,9 @@ if [[ $domain != "" ]]; then
 		f_ptr_lookup "${ip_addresses[@]}"
 	fi
 	
-	f_related_output
+	f_output "CNAME" "${cname_subs[@]}"
 	f_ip
+	f_related_output
 
 else
 	f_print_help

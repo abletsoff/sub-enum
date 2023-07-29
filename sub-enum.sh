@@ -73,9 +73,25 @@ f_web () {
     printed_subs=("$@")
     for sub in ${printed_subs[@]}; do
         response=$(curl -A "$user_agent" -s -k -L -D - --connect-timeout 2 ${sub})
+        requested_subs=(${requested_subs[@]} "$sub")
+
         csp_header=$( echo "$response" | grep --ignore-case "^Content-Security-Policy: ")
         csp_domains=$(echo $csp_header | grep --color -o -P "${domain_regex}")
         csp_subs=(${csp_subs[@]} "${csp_domains[@]}")
+
+	#for csp_domain in ${csp_domains[@]}; do
+	#    duplicate=""
+	#    for tested_sub in ${requested_subs[@]}; do
+        #        if [[ "$tested_sub" == "$csp_domain" ]]; then
+	#	     duplicate="true"
+	#	     break
+	#	fi
+	#    done
+	#    if [[ $duplicate != "true" ]]; then
+        #        f_web $csp_domain
+	#    fi
+	#done
+
         html_domains=$(echo $response | grep -o -P "${domain_regex}" | grep "$domain")
         html_subs=(${html_subs[@]} "${html_domains[@]}")
     done
@@ -86,11 +102,11 @@ f_web () {
 
 f_ip_parsing () {
     for resolve in ${ip_addresses[@]}; do
-        whois=$(whois -B $resolve)
-        inetnum=$(echo "$whois" | grep -P "^inetnum:" | grep -P -o "\d.*$")
-        netname=$(echo "$whois" | grep -P "^netname:" | cut -d ":" -f2 \
+        whois=$(whois $resolve)
+        inetnum=$(echo "$whois" | grep -P -i "^NetRange:|^inetnum:" | grep -P -o "\d.*$")
+        netname=$(echo "$whois" | grep -P -i "^NetName:" | cut -d ":" -f2 \
             | grep -P -o "\S*$")
-        country=$(echo "$whois" | grep -P "^country:" | cut -d ":" -f2 \
+        country=$(echo "$whois" | grep -P -i "^Country:" | cut -d ":" -f2 \
                    | grep -P -o "\S*$" | head -n 1)
 	whois_data=$(f_output "false" "$inetnum" "$netname" "$country")
 

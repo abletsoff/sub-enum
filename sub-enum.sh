@@ -72,29 +72,26 @@ f_ptr_lookup () {
 f_web () {
     printed_subs=("$@")
     for sub in ${printed_subs[@]}; do
-        response=$(curl -A "$user_agent" -s -k -L -D - --connect-timeout 2 ${sub})
+        response=$(curl -A "$user_agent" -s -k -L -D - --connect-timeout 2 $sub)
         requested_subs=(${requested_subs[@]} "$sub")
 
         csp_header=$( echo "$response" | grep --ignore-case "^Content-Security-Policy: ")
-        csp_domains=$(echo $csp_header | grep --color -o -P "${domain_regex}")
+        csp_domains=$(echo "$csp_header" | grep -o -P "${domain_regex}")
         csp_subs=(${csp_subs[@]} "${csp_domains[@]}")
-
-	#for csp_domain in ${csp_domains[@]}; do
-	#    duplicate=""
-	#    for tested_sub in ${requested_subs[@]}; do
-        #        if [[ "$tested_sub" == "$csp_domain" ]]; then
-	#	     duplicate="true"
-	#	     break
-	#	fi
-	#    done
-	#    if [[ $duplicate != "true" ]]; then
-        #        f_web $csp_domain
-	#    fi
-	#done
 
         html_domains=$(echo $response | grep -o -P "${domain_regex}" | grep "$domain")
         html_subs=(${html_subs[@]} "${html_domains[@]}")
     done
+
+    # Recursive search
+    discovered_subs=($(echo "${html_subs[@]} ${csp_subs[@]}" \
+        | sed "s/ /\n/g" | sort | uniq | grep "$domain"))
+    not_requested_subs=($(echo "${discovered_subs[@]} ${requested_subs[@]}" \
+        | sed "s/ /\n/g" | sort | uniq -u))
+    
+    if [ ${#not_requested_subs[@]} -ne 0 ]; then 
+        f_web "${not_requested_subs[@]}"
+    fi
 
     f_parsing "CSP" "${csp_subs[@]}"
     f_parsing "HTML" "${html_subs[@]}"
@@ -137,7 +134,7 @@ f_print_help () {
         "-t\tCertificate transparancy check (crt.sh)\n" \
         "-z\tZone transfering\n" \
         "-p\tPTR lookup\n" \
-        "-w\tHTTP headers and HTML page source analyzing\n" \
+        "-w\tCSP header and HTML page source analyzing\n" \
         "-O\tMarkdown output\n" \
         "-X\tExclude uresolved domains"
 }

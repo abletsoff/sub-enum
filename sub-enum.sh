@@ -2,7 +2,6 @@
 
 domain_regex="(_?([a-z0-9-]){1,61}\.)+[a-z0-9]{1,61}"
 user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0"
-user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)"
 
 f_transparency () {
     json_data=$(curl -A "$user_agent" "https://crt.sh/?q={$domain}&output=json" 2>/dev/null)
@@ -110,6 +109,7 @@ f_ptr_lookup () {
 f_web () {
     printed_subs=("$@")
     for sub in ${printed_subs[@]}; do
+
         response=$(curl -A "$user_agent" -s -k -L -D - --connect-timeout 2 $sub)
         requested_subs=(${requested_subs[@]} "$sub")
 
@@ -117,13 +117,13 @@ f_web () {
         csp_domains=$(echo "$csp_header" | grep -o -P "${domain_regex}")
         csp_subs=(${csp_subs[@]} "${csp_domains[@]}")
 
-        html_domains=$(echo $response | grep -o -P "${domain_regex}" | grep "$domain")
+        html_domains=$(echo $response | grep -o -P "${domain_regex}" | grep -P "$domain")
         html_subs=(${html_subs[@]} "${html_domains[@]}")
     done
 
     # Recursive search
     discovered_subs=($(echo "${html_subs[@]} ${csp_subs[@]}" \
-        | sed "s/ /\n/g" | sort | uniq | grep "$domain"))
+        | sed "s/ /\n/g" | sort | uniq | grep -P "${domain}$"))
     not_requested_subs=($(echo "${discovered_subs[@]} ${requested_subs[@]}" \
         | sed "s/ /\n/g" | sort | uniq -u))
     
@@ -302,6 +302,21 @@ f_output () {
 
 }
 
+f_statistic () {
+    echo -e "\nStatistic:"
+
+    subdomains_count="${#printed_subdomains[@]}"
+    echo "subdomains - $(($subdomains_count - 1))"
+
+    ip_blocks_count="${#ip_ranges[@]}"
+    echo "ip blocks - $ip_blocks_count"
+    echo "start date - $start_date"
+    echo "stop date - $(date)"
+
+}
+
+start_date=$(date)
+
 while getopts "hegtzpwOXT" opt; do
     case $opt in
         e)    email_check="true"
@@ -364,13 +379,15 @@ if [[ $domain != "" ]]; then
     f_parsing "CNAME" "${cname_subs[@]}"
     f_ip_parsing
     f_related_parsing
-    
+
     if [[ $warning == 'true' ]]; then
         echo -e "\nWarnings:"
         if [[ $google_block != '' ]]; then
             echo "Google have detected unusual traffic." 
         fi
     fi
+    
+    f_statistic
 else
     f_print_help
 fi

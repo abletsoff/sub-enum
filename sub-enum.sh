@@ -2,6 +2,7 @@
 
 domain_regex="(_?([a-z0-9-]){1,61}\.)+[a-z0-9]{1,61}"
 user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0"
+user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)"
 
 f_transparency () {
     json_data=$(curl -A "$user_agent" "https://crt.sh/?q={$domain}&output=json" 2>/dev/null)
@@ -40,13 +41,50 @@ f_dmarc () {
 }
 
 f_google () {
-    user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0"
-    url_allowed="[A-z,0-9,\/,\-,_,\.,~,&,=,\?,:]"
-    html=$(curl -k -A "${user_agent}" \
-        "https://www.google.com/search?q=site:*.${domain}+-inurl:www.${domain}"`
-        `"${keyword_operator}&num=100" 2>/dev/null)
-    subs=$(echo $html | grep -o -P "https?:\/\/[a-z,0-9,\.,\-]*${domain}" \
-        | sed "s/ /\n/g" | cut -d "/" -f3)
+    dorks=("site:*.${domain}+-inurl:www.${domain}", "site:*.*.${domain}"
+        "site:*.*.*.${domain}")
+    unset subs
+
+    for dork in ${dorks[@]}; do
+        google_page_start=0
+        while true; do
+            # By default parse only first 300 searches
+            if (($google_page_start >= 300)); then
+                break
+            fi
+            
+            html=$(curl -k -A "${user_agent}" \
+                "https://www.google.com/search?q=${dork}&num=100&start=${google_page_start}" \
+                2>/dev/null)
+           
+            # Generate warning when Google detect unusual traffic
+            google_block=$(echo $html | grep -P "https:\/\/www.google.com\/sorry\/index\?")
+            if [[ $google_block != '' ]]; then
+                warning="true"
+                break
+            fi
+
+            extracted_subs=$(echo $html | grep -o -P "https?:\/\/[a-z,0-9,\.,\-]*${domain}" \
+                | sed "s/ /\n/g" | cut -d "/" -f3)
+
+            echo $google_page_start >> debug.txt
+            echo "$extracted_subs" >> debug.txt
+            
+            subs=(${subs[@]} ${extracted_subs[@]})
+            
+            # Check if there are more search pages to parse
+            extracted_subs_count=$(echo "$extracted_subs" | wc -l)
+            if (( $extracted_subs_count >= 100 )); then
+                google_page_start=$(($google_page_start + $extracted_subs_count))
+            else
+                break
+            fi
+
+            # Myabe Google will be less suspicious if we sleep for one seccond
+            sleep 1 
+        done
+    done
+
     f_parsing "Google" "${subs[@]}"    
 }
 
@@ -326,7 +364,13 @@ if [[ $domain != "" ]]; then
     f_parsing "CNAME" "${cname_subs[@]}"
     f_ip_parsing
     f_related_parsing
-
+    
+    if [[ $warning == 'true' ]]; then
+        echo -e "\nWarnings:"
+        if [[ $google_block != '' ]]; then
+            echo "Google have detected unusual traffic." 
+        fi
+    fi
 else
     f_print_help
 fi

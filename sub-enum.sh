@@ -176,8 +176,7 @@ f_print_help () {
         "-z\tZone transfering\n" \
         "-p\tPTR lookup\n" \
         "-w\tCSP header and HTML page source analyzing\n" \
-        "-O\tMarkdown output\n" \
-        "-X\tExclude uresolved domains"
+        "-O\tMarkdown output\n"
 }
 
 f_resolve () {
@@ -224,16 +223,17 @@ f_parsing () {
     for sub in ${subs[@]}; do
         # Avoiding duplicate entries
         duplicate="false"
-        for p_sub in ${printed_subdomains[@]}; do
+        for p_sub in ${discovered_domains[@]}; do
             if [[ "$sub" = "$p_sub" ]]; then
                 duplicate="true"
                 break
             fi
         done
+
         if [[ $duplicate = "true" ]]; then
             continue
         else    
-            printed_subdomains=(${printed_subdomains[@]} "$sub")
+            discovered_domains=(${discovered_domains[@]} "$sub")
         fi
 
         if [[ "$sub" != *"$domain"* ]]; then
@@ -243,17 +243,16 @@ f_parsing () {
         f_resolve $sub
 
         # Output
-        if [[ $resolve = "unresolved" ]] && [[ $exclude_uresolved = "true" ]]; then
-            continue
-        fi
+	    output=$(f_output "false" "$sub" "$resolve" "$description")
 
-	output=$(f_output "false" "$sub" "$resolve" "$description")
-
-        if [[ $related_domain == '' ]]; then
-            echo "$output"
-        else
+        if [[ $related_domain != '' ]]; then
             related_output=("${related_output[@]}" "$output")
             related_domain=''
+        elif [[ $resolve = "unresolved" ]]; then
+            unresolved_output=("${unresolved_output[@]}" "$output")
+        else
+            effective_subdomains=(${effective_subdomains[@]} "$sub")
+            echo "$output"
         fi
     done
 }
@@ -262,6 +261,15 @@ f_related_parsing () {
     if (( ${#related_output[@]} )); then
 	f_output "true" "Related" "Resolve" "Source"
         for r_output in "${related_output[@]}"; do
+            echo "$r_output"
+        done
+    fi
+}
+
+f_unresolved_parsing () {
+    if (( ${#unresolved_output[@]} )); then
+	f_output "true" "Unresolved" "Resolve" "Source"
+        for r_output in "${unresolved_output[@]}"; do
             echo "$r_output"
         done
     fi
@@ -306,13 +314,14 @@ f_output () {
 }
 
 f_statistic () {
+	f_output "true" "unresolved" "resolve" "source"
     echo -e "\nStatistic:"
 
-    subdomains_count="${#printed_subdomains[@]}"
-    echo "subdomains - $(($subdomains_count - 1))"
+    subdomains_count="${#effective_subdomains[@]}"
+    echo "active domains - $subdomains_count"
 
     ip_blocks_count="${#ip_ranges[@]}"
-    echo "ip blocks - $ip_blocks_count"
+    echo "internet blocks - $ip_blocks_count"
     echo "start date - $start_date"
     echo "stop date - $(date)"
 
@@ -320,7 +329,7 @@ f_statistic () {
 
 start_date=$(date)
 
-while getopts "hegtzpwOXT" opt; do
+while getopts "hegtzpwO" opt; do
     case $opt in
         e)    email_check="true"
             check="true";;
@@ -334,7 +343,6 @@ while getopts "hegtzpwOXT" opt; do
         w)    web="true"
             check="true";;
         O)    markdown_output="true";;
-        X)    exclude_uresolved="true";;
         h)     f_print_help
             exit;;
         ?)     exit;;
@@ -363,7 +371,7 @@ if [[ $domain != "" ]]; then
         f_zone_transfer
     fi
     if [[ $web = "true" ]]; then
-        f_web "${printed_subdomains[@]}"
+        f_web "${effective_subdomains[@]}"
     fi
     if [[ $ptr_lookup = "true" ]]; then
         f_ptr_lookup "${ip_addresses[@]}"
@@ -375,11 +383,12 @@ if [[ $domain != "" ]]; then
         f_google
         f_transparency
         f_zone_transfer
-        f_web "${printed_subdomains[@]}"
+        f_web "${effective_subdomains[@]}"
         f_ptr_lookup "${ip_addresses[@]}"
     fi
     
     f_parsing "CNAME" "${cname_subs[@]}"
+    f_unresolved_parsing
     f_ip_parsing
     f_related_parsing
 

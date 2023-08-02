@@ -314,16 +314,15 @@ f_output () {
 }
 
 f_statistic () {
-	f_output "true" "unresolved" "resolve" "source"
-    echo -e "\nStatistic:"
+	f_output "true" "Statistic" "Value"
 
     subdomains_count="${#effective_subdomains[@]}"
-    echo "active domains - $subdomains_count"
+    f_output "false" "active domains" "$subdomains_count"
 
     ip_blocks_count="${#ip_ranges[@]}"
-    echo "internet blocks - $ip_blocks_count"
-    echo "start date - $start_date"
-    echo "stop date - $(date)"
+    f_output "false" "internet blocks" "$ip_blocks_count"
+    f_output "false" "start date" "$start_date"
+    f_output "false" "stop date" "$(date)"
 
 }
 

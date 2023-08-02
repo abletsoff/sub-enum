@@ -109,8 +109,11 @@ f_ptr_lookup () {
 f_web () {
     printed_subs=("$@")
     for sub in ${printed_subs[@]}; do
-
-        response=$(curl -A "$user_agent" -s -k -L -D - --connect-timeout 2 $sub)
+        
+        # First redirect: HTTP -> HTTPS
+        # Second redirect: example.com -> www.example.com
+        response=$(curl -A "$user_agent" -s -k -L -D - --connect-timeout 2 \
+            --max-redirs 2 "$sub")
         requested_subs=(${requested_subs[@]} "$sub")
 
         csp_header=$( echo "$response" | grep --ignore-case "^Content-Security-Policy: ")

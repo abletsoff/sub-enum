@@ -66,9 +66,6 @@ f_google () {
             extracted_subs=$(echo $html | grep -o -P "https?:\/\/[a-z,0-9,\.,\-]*${domain}" \
                 | sed "s/ /\n/g" | cut -d "/" -f3)
 
-            echo $google_page_start >> debug.txt
-            echo "$extracted_subs" >> debug.txt
-            
             subs=(${subs[@]} ${extracted_subs[@]})
             
             # Check if there are more search pages to parse
@@ -89,7 +86,7 @@ f_google () {
 
 f_zone_transfer () {
     nameservers=($(dig NS +short ${domain}))
-           for nameserver in ${nameservers[@]}; do    
+    for nameserver in ${nameservers[@]}; do    
         axfr_response=$(dig AXFR ${domain} @${nameserver})
         subs=$(echo "$axfr_response" | grep -o -P "${domain_regex}" \
         | grep ${domain})
@@ -112,8 +109,8 @@ f_web () {
         
         # First redirect: HTTP -> HTTPS
         # Second redirect: example.com -> www.example.com
-        response=$(curl -A "$user_agent" -s -k -L -D - --connect-timeout 2 \
-            --max-redirs 2 "$sub")
+        response=$(curl -A "$user_agent" -i -s -k -L -D - --connect-timeout 2 \
+            --max-redirs 2 "$sub" | tr '\0' '\n')
         requested_subs=(${requested_subs[@]} "$sub")
 
         csp_header=$( echo "$response" | grep --ignore-case "^Content-Security-Policy: ")

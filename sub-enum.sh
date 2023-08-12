@@ -109,7 +109,7 @@ f_web () {
         
         # First redirect: HTTP -> HTTPS
         # Second redirect: example.com -> www.example.com
-        response=$(curl -A "$user_agent" -i -s -k -L -D - --connect-timeout 2 \
+        response=$(curl -A "$user_agent" -i -s -k -L -D - --connect-timeout 1 \
             --max-redirs 2 "$sub" | tr '\0' '\n')
         requested_subs=(${requested_subs[@]} "$sub")
 
@@ -117,7 +117,7 @@ f_web () {
         csp_domains=$(echo "$csp_header" | grep -o -P "${domain_regex}")
         csp_subs=(${csp_subs[@]} "${csp_domains[@]}")
 
-        html_domains=$(echo $response | grep -o -P "${domain_regex}" | grep -P "$domain")
+        html_domains=$(echo $response | grep -o -P "${html_domain_regex}" | grep -P "$domain")
         html_subs=(${html_subs[@]} "${html_domains[@]}")
     done
 
@@ -347,6 +347,7 @@ done
 shift $((OPTIND-1))
 
 domain=$1
+html_domain_regex="(_?([a-z0-9-]){1,61}\.)+${domain}" # Performance considerations
 
 if [[ $domain != "" ]]; then
     f_output "true" "Subdomain" "Resolve" "Source"

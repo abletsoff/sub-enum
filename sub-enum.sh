@@ -4,6 +4,7 @@ domain_regex="(_?([a-z0-9-]){1,61}\.)+[a-z0-9]{1,61}"
 user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0"
 
 f_transparency () {
+    f_status "Requesting crt.sh"
     json_data=$(curl -A "$user_agent" "https://crt.sh/?q={$domain}&output=json" 2>/dev/null)
     
     # Retrieving CN certificate field 
@@ -20,6 +21,7 @@ f_transparency () {
 }
 
 f_spf () {
+    f_status "SPF record"
     record=$(dig TXT +short $domain | grep -P '^"v=spf1')
     subs=$(echo $record | grep -o -P "(a|include):\S*|redirect=\S*" \
         | cut -d ":" -f2 | cut -d "=" -f2 | cut -d '"' -f1)
@@ -27,12 +29,14 @@ f_spf () {
 }
 
 f_mx () {
+    f_status "MX record"
     record=$(dig MX +short $domain)
     subs=$(echo "$record" | grep -o -P "\d \S*." |  cut -d " " -f2 | sed "s/.$//g")
     f_parsing "mx" "${subs[@]}"    
 }
 
 f_dmarc () {
+    f_status "DMARC record"
     record=$(dig TXT +short "_dmarc.${domain}")
     subs=$(echo "$record" | grep -o -P "@${domain_regex}" | sed "s/@//g")
     f_parsing "DMARC" "${subs[@]}"    
@@ -45,6 +49,7 @@ f_google () {
     unset subs
 
     for dork in ${dorks[@]}; do
+        f_status "Google dork: $dork"
         google_page_start=0
         while true; do
             # By default parse only first 300 searches
@@ -85,6 +90,7 @@ f_google () {
 }
 
 f_zone_transfer () {
+    f_status "Requesting DNS zone transfer"
     nameservers=($(dig NS +short ${domain}))
     for nameserver in ${nameservers[@]}; do    
         axfr_response=$(dig AXFR ${domain} @${nameserver})
@@ -95,6 +101,7 @@ f_zone_transfer () {
 }
 
 f_ptr_lookup () {
+    f_status "PTR lookup"
     ip_addresses=("$@")
     for ip in ${ip_addresses[@]}; do
         record=$(dig +short -x $ip | sed "s/\.$//g")
@@ -106,6 +113,7 @@ f_ptr_lookup () {
 f_web () {
     printed_subs=("$@")
     for sub in ${printed_subs[@]}; do
+        f_status "Requesting http(s)://$sub"
         
         # First redirect: HTTP -> HTTPS
         # Second redirect: example.com -> www.example.com
@@ -137,13 +145,14 @@ f_web () {
 
 f_ip_parsing () {
     for resolve in ${ip_addresses[@]}; do
+        f_status "WHOIS lookup for $resolve"
         whois=$(whois $resolve)
         inetnum=$(echo "$whois" | grep -P -i "^NetRange:|^inetnum:" | grep -P -o "\d.*$")
         netname=$(echo "$whois" | grep -P -i "^NetName:" | cut -d ":" -f2 \
             | grep -P -o "\S*$")
         country=$(echo "$whois" | grep -P -i "^Country:" | cut -d ":" -f2 \
                    | grep -P -o "\S*$" | head -n 1)
-	whois_data=$(f_output "false" "$inetnum" "$netname" "$country")
+	whois_data=$(f_output "false" "false" "$inetnum" "$netname" "$country")
 
         duplicate=""
         for ip_range in "${ip_ranges[@]}"; do
@@ -158,7 +167,7 @@ f_ip_parsing () {
         fi
     done
     
-    f_output "true" "Inetnum" "Netname" "Country"
+    f_output "true" "true" "Inetnum" "Netname" "Country"
     for ip_range in "${ip_ranges[@]}"; do
         echo $ip_range
     done
@@ -214,6 +223,8 @@ f_parsing () {
     description=$1
     shift 
     unsorted_subs=("$@")
+
+    f_status "DNS resolving"
     subs=($(for sub in "${unsorted_subs[@]}"; \
                do echo "${sub}"; done | sort -u))
         
@@ -240,7 +251,7 @@ f_parsing () {
         f_resolve $sub
 
         # Output
-	    output=$(f_output "false" "$sub" "$resolve" "$description")
+	    output=$(f_output "false" "false" "$sub" "$resolve" "$description")
 
         if [[ $related_domain != '' ]]; then
             related_output=("${related_output[@]}" "$output")
@@ -249,14 +260,14 @@ f_parsing () {
             unresolved_output=("${unresolved_output[@]}" "$output")
         else
             effective_subdomains=(${effective_subdomains[@]} "$sub")
-            echo "$output"
+	        f_output "false" "true" "$sub" "$resolve" "$description"
         fi
     done
 }
 
 f_related_parsing () {
     if (( ${#related_output[@]} )); then
-	f_output "true" "Related" "Resolve" "Source"
+	f_output "true" "true" "Related" "Resolve" "Source"
         for r_output in "${related_output[@]}"; do
             echo "$r_output"
         done
@@ -265,7 +276,7 @@ f_related_parsing () {
 
 f_unresolved_parsing () {
     if (( ${#unresolved_output[@]} )); then
-	f_output "true" "Unresolved" "Resolve" "Source"
+	f_output "true" "true" "Unresolved" "Resolve" "Source"
         for r_output in "${unresolved_output[@]}"; do
             echo "$r_output"
         done
@@ -274,9 +285,19 @@ f_unresolved_parsing () {
 
 f_output () {
     is_title=$1
-    shift 
-    row=("$@")   
+    actual_print=$2
 
+    if [[ $actual_print == "true" ]]; then
+        if [[ $last_printed_status == "true" ]]; then
+            echo -en "\e[1A\e[K\e[1A" 
+        fi
+        last_printed_status="false"
+    fi
+
+    shift 2
+
+    row=("$@")   
+    
     if [[ $is_title == "true" && ${row[0]} != "Subdomain" ]]; then
         echo ""
     fi
@@ -310,16 +331,31 @@ f_output () {
 
 }
 
+f_status () {
+    message=$1
+    
+    # [1A - move  cursor up to 1 line
+    # [K - Erase to end of line
+
+    if [[ $last_printed_status == "true" ]]; then
+        echo -e "\e[1A\e[K\e[1A\nStatus: ${message}"
+    else
+        echo -e "\nStatus: ${message}"
+    fi
+
+    last_printed_status="true"
+}
+
 f_statistic () {
-	f_output "true" "Statistic" "Value"
+	f_output "true" "true" "Statistic" "Value"
 
     subdomains_count="${#effective_subdomains[@]}"
-    f_output "false" "active domains" "$subdomains_count"
+    f_output "false" "true" "active domains" "$subdomains_count"
 
     ip_blocks_count="${#ip_ranges[@]}"
-    f_output "false" "internet blocks" "$ip_blocks_count"
-    f_output "false" "start date" "$start_date"
-    f_output "false" "stop date" "$(date)"
+    f_output "false" "true" "internet blocks" "$ip_blocks_count"
+    f_output "false" "true" "start date" "$start_date"
+    f_output "false" "true" "stop date" "$(date)"
 
 }
 
@@ -350,7 +386,7 @@ domain=$1
 html_domain_regex="(_?([a-z0-9-]){1,61}\.)+${domain}" # Performance considerations
 
 if [[ $domain != "" ]]; then
-    f_output "true" "Subdomain" "Resolve" "Source"
+    f_output "true" "true" "Subdomain" "Resolve" "Source"
     subs=($domain)
     f_parsing "Domain" ${domain[@]}
     if [[ $email_check = "true" ]]; then

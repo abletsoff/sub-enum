@@ -121,26 +121,45 @@ f_web () {
             --max-redirs 2 "$sub" | tr '\0' '\n')
         requested_subs=(${requested_subs[@]} "$sub")
 
+        location_header=$( echo "$response" | grep --ignore-case "^Location: ")
+        redirect_domains=$(echo "$location_header" | grep -o -P "${domain_regex}")
+        redirect_subs=(${redirect_subs[@]} "${redirect_domains[@]}")
+
+
         csp_header=$( echo "$response" | grep --ignore-case "^Content-Security-Policy: ")
         csp_domains=$(echo "$csp_header" | grep -o -P "${domain_regex}")
         csp_subs=(${csp_subs[@]} "${csp_domains[@]}")
 
-        html_domains=$(echo $response | grep -o -P "${html_domain_regex}" | grep -P "$domain")
+        html_domains=$(echo $response | grep -o -P "${html_domain_regex}")
         html_subs=(${html_subs[@]} "${html_domains[@]}")
     done
 
     # Recursive search
-    discovered_subs=($(echo "${html_subs[@]} ${csp_subs[@]}" \
+    discovered_subs=($(echo "${html_subs[@]} ${csp_subs[@]} ${redirect_subs[@]}" \
         | sed "s/ /\n/g" | sort | uniq | grep -P "${domain}$"))
-    not_requested_subs=($(echo "${discovered_subs[@]} ${requested_subs[@]}" \
-        | sed "s/ /\n/g" | sort | uniq -u))
+    
+    not_requested_subs=()
+
+    for discovered_sub in ${discovered_subs[@]}; do
+        duplicate="False"
+        for requested_sub in ${requested_subs[@]}; do
+            if [[ "$discovered_sub" == "$requested_sub" ]]; then
+                duplicate="True"
+                break
+            fi
+        done
+        if [[ $duplicate = "False" ]]; then
+            not_requested_subs=("${not_requested_subs[@]}" "$discovered_sub")
+        fi
+    done
     
     if [ ${#not_requested_subs[@]} -ne 0 ]; then 
         f_web "${not_requested_subs[@]}"
     fi
-
+    
     f_parsing "CSP" "${csp_subs[@]}"
     f_parsing "HTML" "${html_subs[@]}"
+    f_parsing "HTTP Redirect" "${redirect_subs[@]}"
 }
 
 f_ip_parsing () {
@@ -232,7 +251,7 @@ f_parsing () {
         # Avoiding duplicate entries
         duplicate="false"
         for p_sub in ${discovered_domains[@]}; do
-            if [[ "$sub" = "$p_sub" ]]; then
+            if [[ "$sub" == "$p_sub" ]]; then
                 duplicate="true"
                 break
             fi
@@ -244,7 +263,7 @@ f_parsing () {
             discovered_domains=(${discovered_domains[@]} "$sub")
         fi
 
-        if [[ "$sub" != *"$domain"* ]]; then
+        if [[ "$sub" != *"$domain"* ]] && [[ "$cidr" == '' ]]; then
             related_domain='true'
         fi
         
@@ -359,6 +378,27 @@ f_statistic () {
 
 }
 
+f_ip_input_parsing () {
+    base=$(echo "$cidr" | cut -d "/" -f1) 
+    mask=$(echo "$cidr" | cut -d "/" -f2)
+    if [[ $mask == $base ]]; then
+        echo $base
+    else
+        IFS=. read -r i1 i2 i3 i4 <<< "$base"
+        ip=$((i1 * 256 ** 3 + i2 * 256 ** 2 + i3 * 256 + i4))
+        range=$((2 ** (32-mask)))
+        
+        for ((i=0; i<range; i++)); do
+            ip=$((ip+1))
+            octet4=$((ip % 256))
+            octet3=$(((ip / 256) % 256))
+            octet2=$(((ip / 256 / 256) % 256))
+            octet1=$(((ip / 256 / 256 / 256) % 256))
+            echo "$octet1.$octet2.$octet3.$octet4"
+        done
+    fi
+}
+
 start_date=$(date)
 
 while getopts "hegtzpwO" opt; do
@@ -383,9 +423,19 @@ done
 shift $((OPTIND-1))
 
 domain=$1
+if [[ $domain == "" ]]; then
+    f_print_help
+    exit 1
+fi
+
 html_domain_regex="(_?([a-z0-9-]){1,61}\.)+${domain}" # Performance considerations
 
-if [[ $domain != "" ]]; then
+if [[ $(echo $domain | grep -P "(?:[0-9]{1,3}\.){3}[0-9]{1,3}") != '' ]]; then
+    ip_input="True"
+    cidr="$domain"
+fi
+
+if [[ $ip_input != "True" ]]; then
     f_output "true" "true" "Subdomain" "Resolve" "Source"
     subs=($domain)
     f_parsing "Domain" ${domain[@]}
@@ -434,5 +484,11 @@ if [[ $domain != "" ]]; then
     
     f_statistic
 else
-    f_print_help
+    f_output "true" "true" "Domain" "Resolve" "Source"
+    ip_list=($(f_ip_input_parsing))
+    f_ptr_lookup "${ip_list[@]}"
+    f_web ${ip_list[@]}
+    f_web "${effective_subdomains[@]}"
+    f_unresolved_parsing
+    f_ip_parsing
 fi

@@ -112,27 +112,31 @@ f_ptr_lookup () {
 
 f_web () {
     printed_subs=("$@")
-    for sub in ${printed_subs[@]}; do
-        f_status "Requesting http(s)://$sub"
+    f_status "HTTP & HTML scraping"
         
-        # First redirect: HTTP -> HTTPS
-        # Second redirect: example.com -> www.example.com
-        response=$(curl -A "$user_agent" -i -s -k -L -D - --connect-timeout 1 \
-            --max-redirs 2 "$sub" | tr '\0' '\n')
-        requested_subs=(${requested_subs[@]} "$sub")
+    # First redirect: HTTP -> HTTPS
+    # Second redirect: example.com -> www.example.com
+    response=$(for printed_sub in ${printed_subs[@]}; do echo $printed_sub; done \
+        | xargs -P10 -I SUB curl -A "$user_agent" -i -s -k -L -D - --max-time 2 \
+        --max-redirs 2 SUB | tr '\0' '\n')
+    requested_subs=(${requested_subs[@]} ${printed_subs[@]})
 
-        location_header=$( echo "$response" | grep --ignore-case "^Location: ")
-        redirect_domains=$(echo "$location_header" | grep -o -P "${domain_regex}")
-        redirect_subs=(${redirect_subs[@]} "${redirect_domains[@]}")
+    location_headers=$(echo "$response" | grep --ignore-case "^Location: ")
+    redirect_domains=$(echo "$location_headers" \
+        | grep -o -P "https?:\/\/${domain_regex}" | cut -d "/" -f3)
+    redirect_subs=(${redirect_subs[@]} ${redirect_domains[@]})
 
+    csp_header=$( echo "$response" | grep --ignore-case "^Content-Security-Policy: ")
+    csp_domains=$(echo "$csp_header" | grep -o -P "${domain_regex}")
+    csp_subs=(${csp_subs[@]} ${csp_domains[@]})
 
-        csp_header=$( echo "$response" | grep --ignore-case "^Content-Security-Policy: ")
-        csp_domains=$(echo "$csp_header" | grep -o -P "${domain_regex}")
-        csp_subs=(${csp_subs[@]} "${csp_domains[@]}")
-
-        html_domains=$(echo $response | grep -o -P "${html_domain_regex}")
-        html_subs=(${html_subs[@]} "${html_domains[@]}")
-    done
+    html_domains=$(echo "$response" | grep -o -P "${html_domain_regex}")
+    html_subs=(${html_subs[@]} ${html_domains[@]})
+    
+    # It is not optimal to place output here but it will improve output dynamic    
+    f_parsing "CSP" "${csp_subs[@]}"
+    f_parsing "HTML" "${html_subs[@]}"
+    f_parsing "HTTP Redirect" "${redirect_subs[@]}"
 
     # Recursive search
     discovered_subs=($(echo "${html_subs[@]} ${csp_subs[@]} ${redirect_subs[@]}" \
@@ -156,10 +160,6 @@ f_web () {
     if [ ${#not_requested_subs[@]} -ne 0 ]; then 
         f_web "${not_requested_subs[@]}"
     fi
-    
-    f_parsing "CSP" "${csp_subs[@]}"
-    f_parsing "HTML" "${html_subs[@]}"
-    f_parsing "HTTP Redirect" "${redirect_subs[@]}"
 }
 
 f_ip_parsing () {

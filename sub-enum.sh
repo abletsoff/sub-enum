@@ -162,6 +162,28 @@ f_web () {
     fi
 }
 
+f_web_archive () {
+    f_status "Web archive request"
+    subs=$(curl -s \
+        "http://web.archive.org/cdx/search/cdx?url=*.${domain}/*&collapse=urlkey&fl=original" \
+        | grep -P -o "$html_domain_regex" | sort -u)
+    f_parsing "Web archive" "${subs[@]}"
+}
+
+f_hackertarget () {
+    f_status "Hackertarget request"
+    response=$(curl -s "https://api.hackertarget.com/hostsearch/?q=${domain}")
+    if [[ $(echo "$response" | grep "API ") != '' ]]; then
+        warning="true"
+        hackertarget_block="true"
+    elif [[ $(echo "$response" | grep "error ") != '' ]]; then
+        true
+    else
+        subs=$(echo "$response" | cut -d ',' -f1)
+        f_parsing "Hackertarget" "${subs[@]}"
+    fi
+}
+
 f_ip_parsing () {
     for resolve in ${ip_addresses[@]}; do
         f_status "WHOIS lookup for $resolve"
@@ -200,8 +222,9 @@ f_print_help () {
         "-t\tCertificate transparancy check (crt.sh)\n" \
         "-z\tZone transfering\n" \
         "-p\tPTR lookup\n" \
-        "-w\tCSP header and HTML page source analyzing\n" \
-        "-O\tMarkdown output\n"
+        "-w\tHTTP headers and HTML page source analyzing\n" \
+        "-W\tWeb archive\n"
+        "-O\tMarkdown output"
 }
 
 f_resolve () {
@@ -401,7 +424,7 @@ f_ip_input_parsing () {
 
 start_date=$(date)
 
-while getopts "hegtzpwO" opt; do
+while getopts "hegtzpwWHO" opt; do
     case $opt in
         e)    email_check="true"
             check="true";;
@@ -413,6 +436,10 @@ while getopts "hegtzpwO" opt; do
             check="true";;
         p)    ptr_lookup="true";;
         w)    web="true"
+            check="true";;
+        W)    web_archive="true"
+            check="true";;
+        H)    hackertarget="true"
             check="true";;
         O)    markdown_output="true";;
         h)     f_print_help
@@ -456,6 +483,12 @@ if [[ $ip_input != "True" ]]; then
     if [[ $web = "true" ]]; then
         f_web "${effective_subdomains[@]}"
     fi
+    if [[ $web_archive = "true" ]]; then
+        f_web_archive
+    fi
+    if [[ $hackertarget = "true" ]]; then
+        f_hackertarget
+    fi
     if [[ $ptr_lookup = "true" ]]; then
         f_ptr_lookup "${ip_addresses[@]}"
     fi
@@ -466,6 +499,8 @@ if [[ $ip_input != "True" ]]; then
         f_google
         f_transparency
         f_zone_transfer
+        f_web_archive
+        f_hackertarget
         f_web "${effective_subdomains[@]}"
         f_ptr_lookup "${ip_addresses[@]}"
     fi
@@ -477,8 +512,11 @@ if [[ $ip_input != "True" ]]; then
 
     if [[ $warning == 'true' ]]; then
         echo -e "\nWarnings:"
+
         if [[ $google_block != '' ]]; then
             echo "Google have detected unusual traffic." 
+        elif [[ $hackertarget_block != '' ]]; then
+            echo "Hackertarget API count exceeded." 
         fi
     fi
     

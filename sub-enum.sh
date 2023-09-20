@@ -224,7 +224,8 @@ f_print_help () {
         "-p\tPTR lookup\n" \
         "-w\tHTTP headers and HTML page source analyzing\n" \
         "-W\tWeb archive\n"
-        "-O\tMarkdown output"
+        "-O\tMarkdown output\n"
+        "-L\tLimit DNS resolve output"
 }
 
 f_resolve () {
@@ -256,8 +257,11 @@ f_resolve () {
                 fi
             fi
         done
-
-        resolve=$(echo "$resolve" | sed -z "s/\n/, /g" | sed "s/, $//g")
+        if [[ "$limit_resolve_output" == "true" ]]; then
+            resolve=$(echo "$resolve" | sed 's/\.$//g' | head -n 1)
+        else
+            resolve=$(echo "$resolve" | sed -z "s/\n/, /g" | sed "s/, $//g")
+        fi
     fi
 }
 
@@ -370,7 +374,6 @@ f_output () {
             echo ""
         fi
     fi
-
 }
 
 f_status () {
@@ -424,27 +427,28 @@ f_ip_input_parsing () {
 
 start_date=$(date)
 
-while getopts "hegtzpwWHO" opt; do
+while getopts "hegtzpwWHOL" opt; do
     case $opt in
-        e)    email_check="true"
+        e)  email_check="true"
             check="true";;
-        g)    google_check="true"
+        g)  google_check="true"
             check="true";;
-        t)    transparency_check="true"
+        t)  transparency_check="true"
             check="true";;
-        z)    zone_transfer="true"
+        z)  zone_transfer="true"
             check="true";;
-        p)    ptr_lookup="true";;
-        w)    web="true"
+        p)  ptr_lookup="true";;
+        w)  web="true"
             check="true";;
-        W)    web_archive="true"
+        W)  web_archive="true"
             check="true";;
-        H)    hackertarget="true"
+        H)  hackertarget="true"
             check="true";;
-        O)    markdown_output="true";;
-        h)     f_print_help
+        O)  markdown_output="true";;
+        L)  limit_resolve_output="true";;
+        h)  f_print_help
             exit;;
-        ?)     exit;;
+        ?)  exit;;
     esac
 done
 shift $((OPTIND-1))

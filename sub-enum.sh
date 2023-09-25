@@ -223,8 +223,8 @@ f_print_help () {
         "-z\tZone transfering\n" \
         "-p\tPTR lookup\n" \
         "-w\tHTTP headers and HTML page source analyzing\n" \
-        "-W\tWeb archive\n"
-        "-O\tMarkdown output\n"
+        "-W\tWeb archive\n" \
+        "-O\tMarkdown output\n" \
         "-L\tLimit DNS resolve output"
 }
 

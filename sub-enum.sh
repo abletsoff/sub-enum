@@ -183,6 +183,40 @@ f_hackertarget () {
         f_parsing "Hackertarget" "${subs[@]}"
     fi
 }
+f_api_key () {
+    resource=$1
+    api_key=$(cat /usr/share/api-keys.txt 2> /dev/null | grep $resource | cut -d ':' -f2)
+    
+    # Search in current directory 
+    if [[ $api_key = '' ]]; then
+        api_key=$(cat api-keys.txt 2> /dev/null | grep "$resource" | cut -d ':' -f2)
+    fi
+
+    if [[ $api_key = '' ]]; then
+        warrning="true"
+        api_file_troubles="true"
+    fi
+    
+    echo $api_key
+
+}
+f_securitytrails () {
+    f_status "SecurityTrails"
+    api_key=$(f_api_key "SecurityTrails")
+    response=$(curl -s "https://api.securitytrails.com/v1/domain/${domain}"`
+        `"/subdomains?chilren_only=flase" -H "apikey: $api_key")
+
+    raw_subdomains=$(echo $response | grep -P -o '\[.*\]' | sed 's/,//g' \
+        | sed 's/\[//g' | sed 's/\]//g')
+    for raw_subdomain in ${raw_subdomains[@]}; do
+        sub="$(echo $raw_subdomain | sed 's/"//g').$domain"
+        subs=(${subs[@]} $sub)
+    done
+    
+    f_parsing "SecurityTrails" "${subs[@]}"
+
+    #TODO:add warning about API limit exceeding
+}
 
 f_ip_parsing () {
     for resolve in ${ip_addresses[@]}; do
@@ -224,6 +258,7 @@ f_print_help () {
         "-p\tPTR lookup\n" \
         "-w\tHTTP headers and HTML page source analyzing\n" \
         "-W\tWeb archive\n" \
+        "-a\tUse public APIs\n" \
         "-O\tMarkdown output\n" \
         "-L\tLimit DNS resolve output"
 }
@@ -427,7 +462,7 @@ f_ip_input_parsing () {
 
 start_date=$(date)
 
-while getopts "hegtzpwWHOL" opt; do
+while getopts "hegtzpwWaOL" opt; do
     case $opt in
         e)  email_check="true"
             check="true";;
@@ -442,7 +477,7 @@ while getopts "hegtzpwWHOL" opt; do
             check="true";;
         W)  web_archive="true"
             check="true";;
-        H)  hackertarget="true"
+        a)  apis="true"
             check="true";;
         O)  markdown_output="true";;
         L)  limit_resolve_output="true";;
@@ -490,8 +525,9 @@ if [[ $ip_input != "True" ]]; then
     if [[ $web_archive = "true" ]]; then
         f_web_archive
     fi
-    if [[ $hackertarget = "true" ]]; then
+    if [[ $apis = "true" ]]; then
         f_hackertarget
+        f_securitytrails
     fi
     if [[ $ptr_lookup = "true" ]]; then
         f_ptr_lookup "${ip_addresses[@]}"
@@ -505,6 +541,7 @@ if [[ $ip_input != "True" ]]; then
         f_zone_transfer
         f_web_archive
         f_hackertarget
+        f_securitytrails
         f_web "${effective_subdomains[@]}"
         f_ptr_lookup "${ip_addresses[@]}"
     fi
@@ -521,6 +558,8 @@ if [[ $ip_input != "True" ]]; then
             echo "Google have detected unusual traffic." 
         elif [[ $hackertarget_block != '' ]]; then
             echo "Hackertarget API count exceeded." 
+        elif [[ $api_file_troubles != '' ]]; then
+            echo "There is problems with API file" 
         fi
     fi
     

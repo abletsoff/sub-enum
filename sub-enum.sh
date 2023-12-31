@@ -258,7 +258,7 @@ f_print_help () {
         "-p\tPTR lookup\n" \
         "-w\tHTTP headers and HTML page source analyzing\n" \
         "-W\tWeb archive\n" \
-        "-a\tUse public APIs\n" \
+        "-a\tUse public APIs (explicit)\n" \
         "-O\tMarkdown output\n" \
         "-L\tLimit DNS resolve output"
 }
@@ -477,8 +477,7 @@ while getopts "hegtzpwWaOL" opt; do
             check="true";;
         W)  web_archive="true"
             check="true";;
-        a)  apis="true"
-            check="true";;
+        a)  apis="true";;
         O)  markdown_output="true";;
         L)  limit_resolve_output="true";;
         h)  f_print_help
@@ -525,10 +524,6 @@ if [[ $ip_input != "True" ]]; then
     if [[ $web_archive = "true" ]]; then
         f_web_archive
     fi
-    if [[ $apis = "true" ]]; then
-        f_hackertarget
-        f_securitytrails
-    fi
     if [[ $ptr_lookup = "true" ]]; then
         f_ptr_lookup "${ip_addresses[@]}"
     fi
@@ -540,10 +535,12 @@ if [[ $ip_input != "True" ]]; then
         f_transparency
         f_zone_transfer
         f_web_archive
-        f_hackertarget
-        f_securitytrails
         f_web "${effective_subdomains[@]}"
         f_ptr_lookup "${ip_addresses[@]}"
+    fi
+    if [[ $apis = "true" ]]; then
+        f_hackertarget
+        f_securitytrails
     fi
     
     f_parsing "CNAME" "${cname_subs[@]}"

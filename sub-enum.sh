@@ -4,7 +4,7 @@ domain_regex="(_?([a-z0-9-]){1,61}\.)+[a-z0-9]{1,61}"
 user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0"
 
 f_transparency () {
-    f_status "Requesting crt.sh"
+    f_status "Requesting crt.sh (subdomains)"
     json_data=$(curl -A "$user_agent" "https://crt.sh/?q={$domain}&output=json" 2>/dev/null)
     
     # Retrieving CN certificate field 
@@ -112,15 +112,14 @@ f_ptr_lookup () {
 
 f_web () {
     printed_subs=("$@")
-    f_status "HTTP & HTML scraping"
+    f_status "HTTP & HTML scraping  "
         
     # First redirect: HTTP -> HTTPS
     # Second redirect: example.com -> www.example.com
     response=$(for printed_sub in ${printed_subs[@]}; do echo $printed_sub; done \
         | xargs -P10 -I SUB curl -A "$user_agent" -i -s -k -L -D - --max-time 2 \
-        --max-redirs 2 SUB | tr '\0' '\n')
+        --max-redirs 2 SUB -v 2>&1 | tr '\0' '\n')
     requested_subs=(${requested_subs[@]} ${printed_subs[@]})
-
     location_headers=$(echo "$response" | grep --ignore-case "^Location: ")
     redirect_domains=$(echo "$location_headers" \
         | grep -o -P "https?:\/\/${domain_regex}" | cut -d "/" -f3)
@@ -132,6 +131,11 @@ f_web () {
 
     html_domains=$(echo "$response" | grep -o -P "${html_domain_regex}")
     html_subs=(${html_subs[@]} ${html_domains[@]})
+
+    # Data parsing for f_crt_reverse (placed outside of f_crt_reverse for optimization)
+    certificate_org=$(echo "$response" | grep -P "^\*  subject" \
+        | grep -o "O=[^;]*" | cut -d "=" -f2)
+    certificate_orgs=("${certificate_orgs[@]}" "$certificate_org")
     
     # It is not optimal to place output here but it will improve output dynamic    
     f_parsing "CSP" "${csp_subs[@]}"
@@ -160,6 +164,22 @@ f_web () {
     if [ ${#not_requested_subs[@]} -ne 0 ]; then 
         f_web "${not_requested_subs[@]}"
     fi
+}
+
+f_crt_reverse () {
+    f_status "Requesting crt.sh (certificate subject)"
+    array=("$@")
+
+    # Excluding duplicates
+    readarray -t array <<< $(for element in "${array[@]}"; do echo "$element"; done | sort -u)
+    for element in "${array[@]}"; do
+        url=$(echo "https://crt.sh/?q=${element}&output=json" | sed "s/ /+/g")
+        json_data=$(curl -A "$user_agent" "$url" -s)
+        partial_common_names=($(echo "$json_data" | grep -P -o '"common_name":"[^,]*"' \
+            | cut -d ':' -f2 | sed 's/"//g'))
+        common_names=(${common_names[@]} ${partial_common_names[@]})
+    done
+    f_parsing "Reverse certificate" "${common_names[@]}"
 }
 
 f_web_archive () {
@@ -253,7 +273,8 @@ f_print_help () {
         "-h\tdisplay this help and exit\n" \
         "-e\tE-mail DNS entries (MX, SPF, DMARC)\n" \
         "-g\tGoogle search\n" \
-        "-t\tCertificate transparancy check (crt.sh)\n" \
+        "-t\tCertificate transparancy subdomains (crt.sh)\n" \
+        "-c\tCertificate transparancy reverse search\n" \
         "-z\tZone transfering\n" \
         "-p\tPTR lookup\n" \
         "-w\tHTTP headers and HTML page source analyzing\n" \
@@ -462,7 +483,7 @@ f_ip_input_parsing () {
 
 start_date=$(date)
 
-while getopts "hegtzpwWaOL" opt; do
+while getopts "hegtczpwWaOL" opt; do
     case $opt in
         e)  email_check="true"
             check="true";;
@@ -470,14 +491,17 @@ while getopts "hegtzpwWaOL" opt; do
             check="true";;
         t)  transparency_check="true"
             check="true";;
-        z)  zone_transfer="true"
+        c)  crt_reverse_check="true"
+            web_check="true"
             check="true";;
-        p)  ptr_lookup="true";;
-        w)  web="true"
+        z)  zone_transfer_check="true"
             check="true";;
-        W)  web_archive="true"
+        p)  ptr_lookup_check="true";;
+        w)  web_check="true"
             check="true";;
-        a)  apis="true";;
+        W)  web_archive_check="true"
+            check="true";;
+        a)  apis_check="true";;
         O)  markdown_output="true";;
         L)  limit_resolve_output="true";;
         h)  f_print_help
@@ -515,16 +539,19 @@ if [[ $ip_input != "True" ]]; then
     if [[ $transparency_check = "true" ]]; then
         f_transparency
     fi
-    if [[ $zone_transfer = "true" ]]; then
+    if [[ $zone_transfer_check = "true" ]]; then
         f_zone_transfer
     fi
-    if [[ $web = "true" ]]; then
-        f_web "${effective_subdomains[@]}"
-    fi
-    if [[ $web_archive = "true" ]]; then
+    if [[ $web_archive_check = "true" ]]; then
         f_web_archive
     fi
-    if [[ $ptr_lookup = "true" ]]; then
+    if [[ $web_check = "true" ]]; then
+        f_web "${effective_subdomains[@]}"
+    fi
+    if [[ $crt_reverse_check = "true" ]]; then
+        f_crt_reverse "${certificate_orgs[@]}"
+    fi
+    if [[ $ptr_lookup_check = "true" ]]; then
         f_ptr_lookup "${ip_addresses[@]}"
     fi
     if [[ $check != "true" ]]; then
@@ -535,12 +562,13 @@ if [[ $ip_input != "True" ]]; then
         f_transparency
         f_zone_transfer
         f_web_archive
+        if [[ $apis_check = "true" ]]; then
+            f_hackertarget
+            f_securitytrails
+        fi
         f_web "${effective_subdomains[@]}"
+        f_crt_reverse "${certificate_orgs[@]}"
         f_ptr_lookup "${ip_addresses[@]}"
-    fi
-    if [[ $apis = "true" ]]; then
-        f_hackertarget
-        f_securitytrails
     fi
     
     f_parsing "CNAME" "${cname_subs[@]}"

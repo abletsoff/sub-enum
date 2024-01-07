@@ -331,6 +331,9 @@ f_parsing () {
                do echo "${sub}"; done | sort -u))
         
     for sub in ${subs[@]}; do
+        # Remove wildcard
+        sub=$(echo $sub | sed "s/^\*\.//g")
+
         # Avoiding duplicate entries
         duplicate="false"
         for p_sub in ${discovered_domains[@]}; do

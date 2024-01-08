@@ -112,7 +112,7 @@ f_ptr_lookup () {
 
 f_web () {
     printed_subs=("$@")
-    f_status "HTTP & HTML scraping  "
+    f_status "HTTP & HTML scraping"
         
     # First redirect: HTTP -> HTTPS
     # Second redirect: example.com -> www.example.com
@@ -133,9 +133,7 @@ f_web () {
     html_subs=(${html_subs[@]} ${html_domains[@]})
 
     # Data parsing for f_crt_reverse (placed outside of f_crt_reverse for optimization)
-    certificate_org=$(echo "$response" | grep -P "^\*  subject" \
-        | grep -o "O=[^;]*" | cut -d "=" -f2)
-    certificate_orgs=("${certificate_orgs[@]}" "$certificate_org")
+    crt_subjects=("${crt_subjects[@]}" "$(echo "$response" | grep -P "^\*  subject")")
     
     # It is not optimal to place output here but it will improve output dynamic    
     f_parsing "CSP" "${csp_subs[@]}"
@@ -167,18 +165,29 @@ f_web () {
 }
 
 f_crt_reverse () {
-    f_status "Requesting crt.sh (certificate subject)"
-    array=("$@")
+    f_status "Requesting crt.sh (reverse certificate search)"
 
+    for crt_subject in "${crt_subjects[@]}"; do
+        organizations=("${organizations[@]}" \
+            "$(echo "$crt_subject"| grep -o "O=[^;]*" | cut -d "=" -f2)")
+        #emails=("${emails[@]}"
+        #    "$(echo "$crt_subject"| grep -o "emailAddress=[^;]*" | cut -d "=" -f2)")
+    done 
+    
     # Excluding duplicates
-    readarray -t array <<< $(for element in "${array[@]}"; do echo "$element"; done | sort -u)
-    for element in "${array[@]}"; do
-        url=$(echo "https://crt.sh/?q=${element}&output=json" | sed "s/ /+/g")
+    readarray -t organizations <<< $(for i in "${organizations[@]}"; do echo "$i"; done | sort -u)
+    #readarray -t emails <<< $(for i in "${emails[@]}"; do echo "$i"; done | sort -u)
+    
+    queries=("${organizations[@]}" "${emails[@]}")
+
+    for query in "${queries[@]}"; do
+        url=$(echo "https://crt.sh/?q=${query}&output=json" | sed "s/ /+/g")
         json_data=$(curl -A "$user_agent" "$url" -s)
         partial_common_names=($(echo "$json_data" | grep -P -o '"common_name":"[^,]*"' \
             | cut -d ':' -f2 | sed 's/"//g'))
         common_names=(${common_names[@]} ${partial_common_names[@]})
     done
+
     f_parsing "Reverse certificate" "${common_names[@]}"
 }
 
@@ -552,7 +561,7 @@ if [[ $ip_input != "True" ]]; then
         f_web "${effective_subdomains[@]}"
     fi
     if [[ $crt_reverse_check = "true" ]]; then
-        f_crt_reverse "${certificate_orgs[@]}"
+        f_crt_reverse
     fi
     if [[ $ptr_lookup_check = "true" ]]; then
         f_ptr_lookup "${ip_addresses[@]}"
@@ -570,7 +579,7 @@ if [[ $ip_input != "True" ]]; then
             f_securitytrails
         fi
         f_web "${effective_subdomains[@]}"
-        f_crt_reverse "${certificate_orgs[@]}"
+        f_crt_reverse
         f_ptr_lookup "${ip_addresses[@]}"
     fi
     

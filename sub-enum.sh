@@ -170,13 +170,13 @@ f_crt_reverse () {
     for crt_subject in "${crt_subjects[@]}"; do
         organizations=("${organizations[@]}" \
             "$(echo "$crt_subject"| grep -o "O=[^;]*" | cut -d "=" -f2)")
-        #emails=("${emails[@]}"
-        #    "$(echo "$crt_subject"| grep -o "emailAddress=[^;]*" | cut -d "=" -f2)")
+        emails=("${emails[@]}"
+            "$(echo "$crt_subject"| grep -o "emailAddress=[^;]*" | cut -d "=" -f2)")
     done 
     
     # Excluding duplicates
     readarray -t organizations <<< $(for i in "${organizations[@]}"; do echo "$i"; done | sort -u)
-    #readarray -t emails <<< $(for i in "${emails[@]}"; do echo "$i"; done | sort -u)
+    readarray -t emails <<< $(for i in "${emails[@]}"; do echo "$i"; done | sort -u)
     
     queries=("${organizations[@]}" "${emails[@]}")
 
@@ -469,7 +469,19 @@ f_statistic () {
     f_output "false" "true" "internet blocks" "$ip_blocks_count"
     f_output "false" "true" "start date" "$start_date"
     f_output "false" "true" "stop date" "$(date)"
+}
 
+f_juicy_info () {
+    if [[ ${emails[0]} != '' || ${organizations[0]} != '' ]]; then
+	    f_output "true" "true" "Juicy info" "Value"
+
+        for email in ${emails[@]}; do
+            f_output "false" "true" "Cert email" "$email"
+        done
+        for organization in "${organizations[@]}"; do
+            f_output "false" "true" "Cert organization" "$organization"
+        done
+    fi
 }
 
 f_ip_input_parsing () {
@@ -601,6 +613,8 @@ if [[ $ip_input != "True" ]]; then
     fi
     
     f_statistic
+    f_juicy_info
+
 else
     f_output "true" "true" "Domain" "Resolve" "Source"
     ip_list=($(f_ip_input_parsing))

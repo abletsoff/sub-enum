@@ -218,26 +218,16 @@ f_hackertarget () {
         f_parsing "Hackertarget" "${subs[@]}"
     fi
 }
-f_api_key () {
-    resource=$1
-    api_key=$(cat /usr/share/api-keys.txt 2> /dev/null | grep $resource | cut -d ':' -f2)
-    
-    # Search in current directory 
-    if [[ $api_key = '' ]]; then
-        api_key=$(cat api-keys.txt 2> /dev/null | grep "$resource" | cut -d ':' -f2)
-    fi
 
-    if [[ $api_key = '' ]]; then
-        warrning="true"
-        api_file_troubles="true"
-    fi
-    
-    echo $api_key
-
-}
 f_securitytrails () {
     f_status "SecurityTrails"
-    api_key=$(f_api_key "SecurityTrails")
+    
+    api_key=$(env | grep "SECURITY_TRAILS" | cut -d '=' -f2)
+    if [[ $api_key == '' ]]; then
+        warning="true"
+        api_env_var="true"
+    fi
+
     response=$(curl -s "https://api.securitytrails.com/v1/domain/${domain}"`
         `"/subdomains?chilren_only=flase" -H "apikey: $api_key")
 
@@ -567,31 +557,37 @@ if [[ $ip_input != "True" ]]; then
     f_output "true" "true" "Subdomain" "Resolve" "Source"
     subs=($domain)
     f_parsing "Domain" ${domain[@]}
-    if [[ $email_check = "true" ]]; then
+    if [[ $email_check == "true" ]]; then
         f_mx
         f_spf
         f_dmarc
     fi
-    if [[ $google_check = "true" ]]; then
+    if [[ $google_check == "true" ]]; then
         f_google
     fi
-    if [[ $transparency_check = "true" ]]; then
+    if [[ $transparency_check == "true" ]]; then
         f_transparency
     fi
-    if [[ $zone_transfer_check = "true" ]]; then
+    if [[ $zone_transfer_check == "true" ]]; then
         f_zone_transfer
     fi
-    if [[ $web_archive_check = "true" ]]; then
+    if [[ $web_archive_check == "true" ]]; then
         f_web_archive
     fi
-    if [[ $web_check = "true" ]]; then
+    if [[ $web_check == "true" ]]; then
         f_web "${effective_subdomains[@]}"
     fi
-    if [[ $crt_reverse_check = "true" ]]; then
+    if [[ $crt_reverse_check == "true" ]]; then
         f_crt_reverse
     fi
-    if [[ $ptr_lookup_check = "true" ]]; then
+    if [[ $ptr_lookup_check == "true" ]]; then
         f_ptr_lookup "${ip_addresses[@]}"
+    fi
+    if [[ $check == "true" && $apis_check == "true" ]]; then
+            # Reason of special logic of apis_check: 
+            #   View which domains was discovered without API keys (through basic tests)
+            f_hackertarget
+            f_securitytrails
     fi
     if [[ $check != "true" ]]; then
         f_mx
@@ -622,8 +618,8 @@ if [[ $ip_input != "True" ]]; then
             echo "Google have detected unusual traffic." 
         elif [[ $hackertarget_block != '' ]]; then
             echo "Hackertarget API count exceeded." 
-        elif [[ $api_file_troubles != '' ]]; then
-            echo "There is problems with API file" 
+        elif [[ $api_env_var != '' ]]; then
+            echo "There is problems with API key enviroment variable" 
         fi
     fi
     

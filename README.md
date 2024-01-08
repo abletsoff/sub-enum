@@ -19,7 +19,7 @@ Usage: sub-enum [options...] <domain>
 ![Example](https://github.com/abletsoff/sub-enum/blob/main/poc.png?raw=true)
 
 # API
-Create `api-keys.txt` file with the following syntax:
+Create the following enviroment variables:
 ```
-SecurityTrails:your_api_key
+SECURITY_TRAILS=your_api_key
 ```

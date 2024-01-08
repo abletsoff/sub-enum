@@ -135,6 +135,12 @@ f_web () {
     # Data parsing for f_crt_reverse (placed outside of f_crt_reverse for optimization)
     crt_subjects=("${crt_subjects[@]}" "$(echo "$response" | grep -P "^\*  subject")")
     
+    # Email harvesting for Juicy info output 
+    # Regex is not absolutely correct, RFC allowes more special characters in email
+    part_html_emails=$(echo "$response" | grep -P -o "[a-zA-Z0-9\._+-]*@$domain")    
+    html_emails=(${html_emails[@]} ${part_html_emails[@]}) 
+    readarray -t html_emails <<< $(for i in "${html_emails[@]}"; do echo "$i"; done | sort -u)
+
     # It is not optimal to place output here but it will improve output dynamic    
     f_parsing "CSP" "${csp_subs[@]}"
     f_parsing "HTML" "${html_subs[@]}"
@@ -472,14 +478,23 @@ f_statistic () {
 }
 
 f_juicy_info () {
-    if [[ ${emails[0]} != '' || ${organizations[0]} != '' ]]; then
+    if [[ ${emails[0]} != '' || ${organizations[0]} != '' 
+        || ${html_emails[0]} != '' ]]; then
+
 	    f_output "true" "true" "Juicy info" "Value"
 
         for email in ${emails[@]}; do
             f_output "false" "true" "Cert email" "$email"
         done
         for organization in "${organizations[@]}"; do
+            if [[ $organization == '' ]]; then
+                continue
+            fi
             f_output "false" "true" "Cert organization" "$organization"
+        done
+        
+        for html_email in ${html_emails[@]}; do
+            f_output "false" "true" "HTML email" "$html_email"
         done
     fi
 }

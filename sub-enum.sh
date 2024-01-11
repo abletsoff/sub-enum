@@ -275,18 +275,19 @@ f_ip_parsing () {
 
 f_print_help () {
     echo -e "Usage: sub-enum [options...] <domain>\n" \
-        "-h\tdisplay this help and exit\n" \
-        "-e\tE-mail DNS entries (MX, SPF, DMARC)\n" \
-        "-g\tGoogle search\n" \
-        "-t\tCertificate transparancy subdomains (crt.sh)\n" \
-        "-c\tCertificate transparancy reverse search\n" \
-        "-z\tZone transfering\n" \
-        "-p\tPTR lookup\n" \
-        "-w\tHTTP headers and HTML page source analyzing\n" \
-        "-W\tWeb archive\n" \
-        "-a\tUse public APIs (explicit)\n" \
-        "-O\tMarkdown output\n" \
-        "-L\tLimit DNS resolve output"
+        "-h\t\tdisplay this help and exit\n" \
+        "-e\t\tE-mail DNS entries (MX, SPF, DMARC)\n" \
+        "-g\t\tGoogle search\n" \
+        "-t\t\tCertificate transparancy subdomains (crt.sh)\n" \
+        "-c\t\tCertificate transparancy reverse search\n" \
+        "-z\t\tZone transfering\n" \
+        "-p\t\tPTR lookup\n" \
+        "-w\t\tHTTP headers and HTML page source analyzing\n" \
+        "-W\t\tWeb archive\n" \
+        "-a\t\tUse public APIs (explicit)\n" \
+        "-o [VALUE]\toutput: basic (default), markdown, csv\n" \
+        "-s\t\tsilent (not interactive output)\n" \
+        "-L\t\tLimit DNS resolve output"
 }
 
 f_resolve () {
@@ -396,23 +397,25 @@ f_unresolved_parsing () {
 f_output () {
     is_title=$1
     actual_print=$2
+    
+    if [[ $not_interactive != "true" ]]; then
 
-    if [[ $actual_print == "true" ]]; then
-        if [[ $last_printed_status == "true" ]]; then
-            echo -en "\e[1A\e[K\e[1A" 
+        if [[ $actual_print == "true" ]]; then
+            if [[ $last_printed_status == "true" ]]; then
+                echo -en "\e[1A\e[K\e[1A" 
+            fi
+            last_printed_status="false"
         fi
-        last_printed_status="false"
     fi
 
     shift 2
-
     row=("$@")   
     
     if [[ $is_title == "true" && ${row[0]} != "Subdomain" ]]; then
         echo ""
     fi
 	
-    if [[ $markdown_output = "true" ]]; then
+    if [[ $output_style == "markdown" ]]; then
         for element in "${row[@]}"; do
             echo -n "|${element}"
         done
@@ -424,6 +427,14 @@ f_output () {
             done
             echo "|"
         fi
+    
+    elif [[ $output_style == "csv" ]]; then
+        row_len=${#row[@]}
+        for (( i=0; i<$((row_len-1)); i++ )); do
+            echo -n "${row[$i]},"
+        done
+        echo "${row[-1]}"
+        
     else
         if [[ $is_title == "true" ]]; then
             echo "${row[0]}:"
@@ -445,14 +456,15 @@ f_status () {
     
     # [1A - move  cursor up to 1 line
     # [K - Erase to end of line
+    if [[ $not_interactive != "true" ]]; then
+        if [[ $last_printed_status == "true" ]]; then
+            echo -e "\e[1A\e[K\e[1A\nStatus: ${message}"
+        else
+            echo -e "\nStatus: ${message}"
+        fi
 
-    if [[ $last_printed_status == "true" ]]; then
-        echo -e "\e[1A\e[K\e[1A\nStatus: ${message}"
-    else
-        echo -e "\nStatus: ${message}"
+        last_printed_status="true"
     fi
-
-    last_printed_status="true"
 }
 
 f_statistic () {
@@ -512,7 +524,7 @@ f_ip_input_parsing () {
 
 start_date=$(date)
 
-while getopts "hegtczpwWaOL" opt; do
+while getopts "hegtczpwaWo:sL" opt; do
     case $opt in
         e)  email_check="true"
             check="true";;
@@ -528,10 +540,22 @@ while getopts "hegtczpwWaOL" opt; do
         p)  ptr_lookup_check="true";;
         w)  web_check="true"
             check="true";;
+        a)  apis_check="true";;
         W)  web_archive_check="true"
             check="true";;
-        a)  apis_check="true";;
-        O)  markdown_output="true";;
+        o)  output_style="$OPTARG"
+            correct_styles=('basic' 'default' 'markdown' 'csv')
+            for correct_style in ${correct_styles[@]}; do
+                if [[ $correct_style == "$output_style" ]]; then
+                   output_style_correct="true"
+                fi
+            done
+            if [[ $output_style_correct != 'true' ]]; then
+                echo "Error: Invalid output (-o) option"
+                f_print_help
+                exit
+            fi;;
+        s)  not_interactive="true";;
         L)  limit_resolve_output="true";;
         h)  f_print_help
             exit;;

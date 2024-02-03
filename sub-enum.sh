@@ -126,10 +126,10 @@ f_web () {
     redirect_subs=(${redirect_subs[@]} ${redirect_domains[@]})
 
     csp_header=$( echo "$response" | grep --ignore-case "^Content-Security-Policy: ")
-    csp_domains=$(echo "$csp_header" | grep -o -P "${domain_regex}")
+    csp_domains=$(echo "$csp_header" | grep -o -P "${domain_specific_regex}")
     csp_subs=(${csp_subs[@]} ${csp_domains[@]})
 
-    html_domains=$(echo "$response" | grep -o -P "${html_domain_regex}")
+    html_domains=$(echo "$response" | grep -o -P "${domain_specific_regex}")
     html_subs=(${html_subs[@]} ${html_domains[@]})
 
     # Data parsing for f_crt_reverse (placed outside of f_crt_reverse for optimization)
@@ -201,7 +201,7 @@ f_web_archive () {
     f_status "Web archive request"
     subs=$(curl -s \
         "http://web.archive.org/cdx/search/cdx?url=*.${domain}/*&collapse=urlkey&fl=original" \
-        | grep -P -o "$html_domain_regex" | sort -u)
+        | grep -P -o "$domain_specific_regex" | sort -u)
     f_parsing "Web archive" "${subs[@]}"
 }
 
@@ -570,7 +570,7 @@ if [[ $domain == "" ]]; then
     exit 1
 fi
 
-html_domain_regex="(_?([a-z0-9-]){1,61}\.)+${domain}" # Performance considerations
+domain_specific_regex="(_?([a-z0-9-]){1,61}\.)+${domain}" # Performance considerations
 
 if [[ $(echo $domain | grep -P "(?:[0-9]{1,3}\.){3}[0-9]{1,3}") != '' ]]; then
     ip_input="True"

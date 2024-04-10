@@ -2,6 +2,14 @@
 
 domain_regex="(_?([a-z0-9-]){1,61}\.)+[a-z0-9]{1,61}"
 user_agent="Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0"
+reliable_resolvers=("8.8.8.8" "8.8.4.4" "9.9.9.9" "149.112.112.112" "208.67.222.222" "208.67.220.220")
+
+f_random_resolver () {
+    array_length=${#reliable_resolvers[@]}
+    random_index=$(( $RANDOM % $array_length ))
+    selected_element=${reliable_resolvers[$random_index]}
+    echo "$selected_element"
+}
 
 f_transparency () {
     f_status "Requesting crt.sh (subdomains)"
@@ -295,11 +303,17 @@ f_print_help () {
 
 f_resolve () {
     sub=$1
-    resolve=$(dig +short "$sub")
+    resolver=$(f_random_resolver)
+    resolve=$(dig +short "$sub" "@$resolver")
 
     if [[ $resolve = '' ]]; then
         resolve="unresolved"
+    elif [[ $(echo "$resolve" | grep "communications error" | wc -l ) == "3" ]]; then
+        resolve=$(echo "$resolve" | head -n 1 | grep -P -o "communications error to [\d\.]*#53")
+        warning="true"
+        resolve_error="true"
     else
+        resolve=$(echo "$resolve" | grep -v "communications error")
         for resolved_ip in ${resolve[@]}; do
             duplicate=""
             
@@ -660,6 +674,8 @@ if [[ $ip_input != "True" ]]; then
             echo "Hackertarget API count exceeded." 
         elif [[ $api_env_var != '' ]]; then
             echo "There is problems with API key enviroment variable" 
+        elif [[ $resolve_error != '' ]]; then
+            echo "Some subdomains are not resolved due to DNS communication errors" 
         fi
     fi
     

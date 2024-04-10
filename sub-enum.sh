@@ -39,6 +39,8 @@ f_dmarc () {
     f_status "DMARC record"
     record=$(dig TXT +short "_dmarc.${domain}")
     subs=$(echo "$record" | grep -o -P "@${domain_regex}" | sed "s/@//g")
+    dmarc_emails=$(echo "$record" | grep -P -o "[a-zA-Z0-9\._+-]*@$domain")    
+    readarray -t dmarc_emails <<< $(for i in "${dmarc_emails[@]}"; do echo "$i"; done | sort -u)
     f_parsing "DMARC" "${subs[@]}"    
 
 }
@@ -286,6 +288,7 @@ f_print_help () {
         "-W\t\tWeb archive\n" \
         "-a\t\tUse public APIs (explicit)\n" \
         "-o [VALUE]\toutput: basic (default), markdown, csv\n" \
+        "-f\t\tstore results in file\n" \
         "-s\t\tsilent (not interactive output)\n" \
         "-L\t\tLimit DNS resolve output"
 }
@@ -372,6 +375,10 @@ f_parsing () {
         else
             effective_subdomains=(${effective_subdomains[@]} "$sub")
 	        f_output "false" "true" "$sub" "$resolve" "$description"
+            
+            if [[ $file_output == "true" ]]; then
+                echo "$sub - $resolve" >> "$file_output_name"
+            fi
         fi
     done
 }
@@ -481,7 +488,7 @@ f_statistic () {
 
 f_juicy_info () {
     if [[ ${emails[0]} != '' || ${organizations[0]} != '' 
-        || ${html_emails[0]} != '' ]]; then
+        || ${html_emails[0]} != '' || ${dmarc_emails[0]} != '' ]]; then
 
 	    f_output "true" "true" "Juicy info" "Value"
 
@@ -497,6 +504,10 @@ f_juicy_info () {
         
         for html_email in ${html_emails[@]}; do
             f_output "false" "true" "HTML email" "$html_email"
+        done
+        
+        for dmarc_email in ${dmarc_emails[@]}; do
+            f_output "false" "true" "DMARC email" "$dmarc_email"
         done
     fi
 }
@@ -524,7 +535,7 @@ f_ip_input_parsing () {
 
 start_date=$(date)
 
-while getopts "hegtczpwaWo:sL" opt; do
+while getopts "hegtczpwaWo:fsL" opt; do
     case $opt in
         e)  email_check="true"
             check="true";;
@@ -555,6 +566,7 @@ while getopts "hegtczpwaWo:sL" opt; do
                 f_print_help
                 exit
             fi;;
+        f)  file_output="true";;
         s)  not_interactive="true";;
         L)  limit_resolve_output="true";;
         h)  f_print_help
@@ -565,10 +577,13 @@ done
 shift $((OPTIND-1))
 
 domain=$1
+
 if [[ $domain == "" ]]; then
     f_print_help
     exit 1
 fi
+
+file_output_name="sub-enum_${domain}_$(date +%d-%m-%Y).txt"
 
 domain_specific_regex="(_?([a-z0-9-]){1,61}\.)+${domain}" # Performance considerations
 
@@ -581,6 +596,7 @@ if [[ $ip_input != "True" ]]; then
     f_output "true" "true" "Subdomain" "Resolve" "Source"
     subs=($domain)
     f_parsing "Domain" ${domain[@]}
+
     if [[ $email_check == "true" ]]; then
         f_mx
         f_spf

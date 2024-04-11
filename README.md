@@ -21,5 +21,6 @@ Usage: sub-enum [options...] <domain>
 # API
 Create the following enviroment variables:
 ```
-SECURITY_TRAILS=your_api_key
+SECURITY_TRAILS_API=your_api_key
+VIRUSTOTAL_API=your_api_key
 ```

@@ -232,7 +232,7 @@ f_hackertarget () {
 f_securitytrails () {
     f_status "SecurityTrails"
     
-    api_key=$(env | grep "SECURITY_TRAILS" | cut -d '=' -f2)
+    api_key=$(env | grep "SECURITY_TRAILS_API" | cut -d '=' -f2)
     if [[ $api_key == '' ]]; then
         warning="true"
         api_env_var="true"
@@ -251,6 +251,20 @@ f_securitytrails () {
     f_parsing "SecurityTrails" "${subs[@]}"
 
     #TODO:add warning about API limit exceeding
+}
+
+f_virustotal () {
+    api_key=$(env | grep "VIRUSTOTAL_API" | cut -d '=' -f2)
+    if [[ $api_key == '' ]]; then
+        warning="true"
+        api_env_var="true"
+    fi
+
+    response=$(curl -s --header "x-apikey: $api_key" \
+        "https://www.virustotal.com/api/v3/domains/${domain}/subdomains?limit=1000")
+    subs=$(echo "$response" | grep '"id"' | cut -d '"' -f4)
+    f_parsing "VirusTotal" "${subs[@]}"
+
 }
 
 f_dnssec_check () {
@@ -650,8 +664,7 @@ if [[ $ip_input != "True" ]]; then
         f_ptr_lookup "${ip_addresses[@]}"
     fi
     if [[ $check == "true" && $apis_check == "true" ]]; then
-            # Reason of special logic of apis_check: 
-            #   View which domains was discovered without API keys (through basic tests)
+            f_virustotal
             f_hackertarget
             f_securitytrails
     fi
@@ -664,6 +677,7 @@ if [[ $ip_input != "True" ]]; then
         f_zone_transfer
         f_web_archive
         if [[ $apis_check = "true" ]]; then
+            f_virustotal
             f_hackertarget
             f_securitytrails
         fi

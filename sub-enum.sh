@@ -253,6 +253,13 @@ f_securitytrails () {
     #TODO:add warning about API limit exceeding
 }
 
+f_dnssec_check () {
+    response=$(dig +dnssec +noall +answer $domain)
+    if [[ $(echo "$response" | grep "RRSIG") != '' ]]; then
+        dnssec_support="true"
+    fi
+}
+
 f_ip_parsing () {
     for resolve in ${ip_addresses[@]}; do
         f_status "WHOIS lookup for $resolve"
@@ -310,7 +317,7 @@ f_resolve () {
         resolve=$(echo "$resolve" | head -n 1 | grep -P -o "communications error to [\d\.]*#53")
         warning="true"
         resolve_error="true"
-    elif [[ $(echo "$resolve" | grep -v "communications error") = '' ]]; then
+    elif [[ $(echo "$resolve" | grep -v "communications error") == '' ]]; then
         resolve="unresolved"
     else
         resolve=$(echo "$resolve" | grep -v "communications error")
@@ -502,7 +509,8 @@ f_statistic () {
 
 f_juicy_info () {
     if [[ ${emails[0]} != '' || ${organizations[0]} != '' 
-        || ${html_emails[0]} != '' || ${dmarc_emails[0]} != '' ]]; then
+        || ${html_emails[0]} != '' || ${dmarc_emails[0]} != '' 
+        || $dnssec_support == "true" ]]; then
 
 	    f_output "true" "true" "Juicy info" "Value"
 
@@ -523,6 +531,10 @@ f_juicy_info () {
         for dmarc_email in ${dmarc_emails[@]}; do
             f_output "false" "true" "DMARC email" "$dmarc_email"
         done
+        
+        if [[ $dnssec_support == "true" ]]; then
+            f_output "false" "true" "DNSSEC status" "enabled"
+        fi
     fi
 }
 
@@ -680,6 +692,7 @@ if [[ $ip_input != "True" ]]; then
     fi
     
     f_statistic
+    f_dnssec_check
     f_juicy_info
 
 else

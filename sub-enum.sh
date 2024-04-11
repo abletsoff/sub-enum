@@ -306,12 +306,12 @@ f_resolve () {
     resolver=$(f_random_resolver)
     resolve=$(dig +short "$sub" "@$resolver")
 
-    if [[ $resolve = '' ]]; then
-        resolve="unresolved"
-    elif [[ $(echo "$resolve" | grep "communications error" | wc -l ) == "3" ]]; then
+    if [[ $(echo "$resolve" | grep "communications error" | wc -l ) == "3" ]]; then
         resolve=$(echo "$resolve" | head -n 1 | grep -P -o "communications error to [\d\.]*#53")
         warning="true"
         resolve_error="true"
+    elif [[ $(echo "$resolve" | grep -v "communications error") = '' ]]; then
+        resolve="unresolved"
     else
         resolve=$(echo "$resolve" | grep -v "communications error")
         for resolved_ip in ${resolve[@]}; do

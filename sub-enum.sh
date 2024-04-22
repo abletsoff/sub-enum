@@ -229,42 +229,54 @@ f_hackertarget () {
     fi
 }
 
-f_securitytrails () {
-    f_status "SecurityTrails"
+f_api_key () {
+    api_type=$1
+    api_key=$(env | grep "$api_type" | cut -d '=' -f2)
     
-    api_key=$(env | grep "SECURITY_TRAILS_API" | cut -d '=' -f2)
+    # If tool is running from other user (e.g. www-data)
+    if [[ $api_key == '' ]]; then
+        api_key=$(cat "/usr/share/api/apis.txt" | grep "$api_type" | cut -d '=' -f2)
+    fi
+        
     if [[ $api_key == '' ]]; then
         warning="true"
-        api_env_var="true"
+        api_warning="true"
     fi
 
-    response=$(curl -s "https://api.securitytrails.com/v1/domain/${domain}"`
-        `"/subdomains?chilren_only=flase" -H "apikey: $api_key")
+}
 
-    raw_subdomains=$(echo $response | grep -P -o '\[.*\]' | sed 's/,//g' \
-        | sed 's/\[//g' | sed 's/\]//g')
-    for raw_subdomain in ${raw_subdomains[@]}; do
-        sub="$(echo $raw_subdomain | sed 's/"//g').$domain"
-        subs=(${subs[@]} $sub)
-    done
-    
-    f_parsing "SecurityTrails" "${subs[@]}"
+f_securitytrails () {
+    f_status "SecurityTrails API"
+    f_api_key "SECURITY_TRAILS_API" 
+
+    if [[ "$api_key" != '' ]]; then
+
+        response=$(curl -s "https://api.securitytrails.com/v1/domain/${domain}"`
+            `"/subdomains?chilren_only=flase" -H "apikey: $api_key")
+
+        raw_subdomains=$(echo $response | grep -P -o '\[.*\]' | sed 's/,//g' \
+            | sed 's/\[//g' | sed 's/\]//g')
+        for raw_subdomain in ${raw_subdomains[@]}; do
+            sub="$(echo $raw_subdomain | sed 's/"//g').$domain"
+            subs=(${subs[@]} $sub)
+        done
+        
+        f_parsing "SecurityTrails" "${subs[@]}"
+    fi
 
     #TODO:add warning about API limit exceeding
 }
 
 f_virustotal () {
-    api_key=$(env | grep "VIRUSTOTAL_API" | cut -d '=' -f2)
-    if [[ $api_key == '' ]]; then
-        warning="true"
-        api_env_var="true"
+    f_status "VirusTotal API"
+    f_api_key "VIRUSTOTAL_API" 
+    
+    if [[ "$api_key" != '' ]]; then
+        response=$(curl -s --header "x-apikey: $api_key" \
+            "https://www.virustotal.com/api/v3/domains/${domain}/subdomains?limit=1000")
+        subs=$(echo "$response" | grep '"id"' | cut -d '"' -f4)
+        f_parsing "VirusTotal" "${subs[@]}"
     fi
-
-    response=$(curl -s --header "x-apikey: $api_key" \
-        "https://www.virustotal.com/api/v3/domains/${domain}/subdomains?limit=1000")
-    subs=$(echo "$response" | grep '"id"' | cut -d '"' -f4)
-    f_parsing "VirusTotal" "${subs[@]}"
-
 }
 
 f_dnssec_check () {
@@ -698,8 +710,8 @@ if [[ $ip_input != "True" ]]; then
             echo "Google have detected unusual traffic." 
         elif [[ $hackertarget_block != '' ]]; then
             echo "Hackertarget API count exceeded." 
-        elif [[ $api_env_var != '' ]]; then
-            echo "There is problems with API key enviroment variable" 
+        elif [[ $api_warning != '' ]]; then
+            echo "There is problems with API key" 
         elif [[ $resolve_error != '' ]]; then
             echo "Some subdomains are not resolved due to DNS communication errors" 
         fi

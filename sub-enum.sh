@@ -287,34 +287,21 @@ f_dnssec_check () {
 }
 
 f_ip_parsing () {
-    for resolve in ${ip_addresses[@]}; do
+    f_output "true" "true" "IP address" "IP range" "Netname_Country"
+    ip_addresses_sorted=$(echo "${ip_addresses[@]}" | sed 's/ /\n/g' | sort)
+
+    for ip in ${ip_addresses_sorted[@]}; do
         f_status "WHOIS lookup for $resolve"
-        whois=$(whois $resolve)
+        whois=$(whois $ip)
         inetnum=$(echo "$whois" | grep -P -i "^NetRange:|^inetnum:" | grep -P -o "\d.*$" \
             | sed 's/ //g')
         netname=$(echo "$whois" | grep -P -i "^NetName:" | cut -d ":" -f2 \
             | grep -P -o "\S*$")
         country=$(echo "$whois" | grep -P -i "^Country:" | cut -d ":" -f2 \
                    | grep -P -o "\S*$" | head -n 1)
-	whois_data=$(f_output "false" "false" "$inetnum" "$netname" "$country")
-
-        duplicate=""
-        for ip_range in "${ip_ranges[@]}"; do
-            if [[ "$ip_range" == "$whois_data" ]]; then
-                duplicate="true"
-                break
-            fi
-        done
-        
-        if [[ $duplicate == "" ]]; then
-            ip_ranges=("${ip_ranges[@]}" "$whois_data")
-        fi
+    	f_output "false" "true" "$ip" "$inetnum" "${netname}_${country}"
     done
     
-    f_output "true" "true" "Inetnum" "Netname" "Country"
-    for ip_range in "${ip_ranges[@]}"; do
-        echo $ip_range
-    done
 }
 
 f_print_help () {

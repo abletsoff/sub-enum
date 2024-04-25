@@ -54,7 +54,7 @@ f_dmarc () {
 }
 
 f_google () {
-    dorks=("site:*.${domain}+-inurl:www.${domain}", "site:*.*.${domain}"
+    dorks=("site:*.${domain}+-inurl:www.${domain}" "site:*.*.${domain}"
         "site:*.*.*.${domain}")
     unset subs
 
@@ -290,7 +290,8 @@ f_ip_parsing () {
     for resolve in ${ip_addresses[@]}; do
         f_status "WHOIS lookup for $resolve"
         whois=$(whois $resolve)
-        inetnum=$(echo "$whois" | grep -P -i "^NetRange:|^inetnum:" | grep -P -o "\d.*$")
+        inetnum=$(echo "$whois" | grep -P -i "^NetRange:|^inetnum:" | grep -P -o "\d.*$" \
+            | sed 's/ //g')
         netname=$(echo "$whois" | grep -P -i "^NetName:" | cut -d ":" -f2 \
             | grep -P -o "\S*$")
         country=$(echo "$whois" | grep -P -i "^Country:" | cut -d ":" -f2 \
@@ -424,7 +425,7 @@ f_parsing () {
 	        f_output "false" "true" "$sub" "$resolve" "$description"
             
             if [[ $file_output == "true" ]]; then
-                echo "$sub - $resolve" >> "$file_output_name"
+                echo "$sub - $resolve" >> "$file_output_name_sub"
             fi
         fi
     done
@@ -585,6 +586,26 @@ f_ip_input_parsing () {
     fi
 }
 
+f_domains_to_ip_file_construction () {
+    ip_addresses_sorted=$(echo "${ip_addresses[@]}" | sed 's/ /\n/g' | sort)
+    file_output_name_ip="domains-to-ip_${domain}_$(date +%d-%m-%Y).txt"
+    truncate -s 0 "$file_output_name_ip" 2>/dev/null # Clear file content if it exist
+    
+    readarray -t output_lines < "$file_output_name_sub"
+    for ip in ${ip_addresses_sorted[@]}; do
+        echo "$ip" >> "$file_output_name_ip"
+    
+        for line in "${output_lines[@]}"; do
+            regex_exp="$(echo $ip | sed 's/\./\\\./g')"
+    
+            if [[ $(echo "$line" | grep -P "\D$regex_exp(?!\d)") != '' ]]; then
+                domain_output=$(echo "$line" | cut -d ' ' -f1)
+                echo -e "\t$domain_output" >> "$file_output_name_ip"
+            fi
+        done
+    done
+}
+
 start_date=$(date)
 
 while getopts "hegtczpwaWo:fsL" opt; do
@@ -635,7 +656,10 @@ if [[ $domain == "" ]]; then
     exit 1
 fi
 
-file_output_name="sub-enum_${domain}_$(date +%d-%m-%Y).txt"
+if [[ $file_output == "true" ]]; then
+    file_output_name_sub="sub-enum_${domain}_$(date +%d-%m-%Y).txt"
+    truncate -s 0 "$file_output_name_sub" 2>/dev/null # Clear file content if it exist
+fi
 
 domain_specific_regex="(_?([a-z0-9-]){1,61}\.)+${domain}" # Performance considerations
 
@@ -703,6 +727,10 @@ if [[ $ip_input != "True" ]]; then
     f_ip_parsing
     f_related_parsing
 
+    if [[ $file_output == "true" ]]; then
+        f_domains_to_ip_file_construction 
+    fi
+
     if [[ $warning == 'true' ]]; then
         echo -e "\nWarnings:"
 
@@ -720,7 +748,7 @@ if [[ $ip_input != "True" ]]; then
     f_statistic
     f_dnssec_check
     f_juicy_info
-
+    
 else
     f_output "true" "true" "Domain" "Resolve" "Source"
     ip_list=($(f_ip_input_parsing))

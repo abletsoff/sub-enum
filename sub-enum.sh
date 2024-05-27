@@ -209,9 +209,11 @@ f_crt_reverse () {
 
 f_web_archive () {
     f_status "Web archive request"
+    # If there are no data transfer, even 1 byte (speed-limit) transfer
+    # in 60 seconds (speed-time) abort connection 
     subs=$(curl -s \
-        "http://web.archive.org/cdx/search/cdx?url=*.${domain}/*&collapse=urlkey&fl=original" \
-        | grep -P -o "$domain_specific_regex" | sort -u)
+        "http://web.archive.org/cdx/search/cdx?url=*.${domain}/&collapse=urlkey&fl=original" \
+        --speed-time 60 --speed-limit 1 | grep -P -o "$domain_specific_regex" | sort -u)
     f_parsing "Web archive" "${subs[@]}"
 }
 
@@ -575,7 +577,7 @@ f_ip_input_parsing () {
 
 f_domains_to_ip_file_construction () {
     ip_addresses_sorted=$(echo "${ip_addresses[@]}" | sed 's/ /\n/g' | sort)
-    file_output_name_ip="domains-to-ip_${domain}_$(date +%d-%m-%Y).txt"
+    file_output_name_ip="sub-enum_sub-to-ip_${domain}_$(date +%d-%m-%Y).txt"
     truncate -s 0 "$file_output_name_ip" 2>/dev/null # Clear file content if it exist
     
     readarray -t output_lines < "$file_output_name_sub"

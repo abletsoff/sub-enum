@@ -214,7 +214,12 @@ f_web_archive () {
     subs=$(curl -s \
         "http://web.archive.org/cdx/search/cdx?url=*.${domain}/&collapse=urlkey&fl=original" \
         --speed-time 60 --speed-limit 1 | grep -P -o "$domain_specific_regex" | sort -u)
-    f_parsing "Web archive" "${subs[@]}"
+    if [[ ${subs[0]} == '' ]]; then
+        web_archive_error="true"
+        warning="true"
+    else
+        f_parsing "Web archive" "${subs[@]}"
+    fi
 }
 
 f_hackertarget () {
@@ -731,6 +736,8 @@ if [[ $ip_input != "True" ]]; then
             echo "There is problems with API key" 
         elif [[ $resolve_error != '' ]]; then
             echo "Some subdomains are not resolved due to DNS communication errors" 
+        elif [[ $web_archive_error != '' ]]; then
+            echo "Troubles with Wayback Machine"
         fi
     fi
     

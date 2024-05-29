@@ -208,18 +208,37 @@ f_crt_reverse () {
 }
 
 f_web_archive () {
+    # Search URL params docs https://github.com/internetarchive/wayback/tree/master/wayback-cdx-server
     f_status "Web archive request"
+
+    #Slower data transfer, more precise results
+    archive_url="http://web.archive.org/cdx/search/cdx?url=*.${domain}\
+/&collapse=urlkey&fl=original" 
+    
+    #Slower back-end searching, lightning fast data transfer, less precise results
+    # \{1,5\} escaping is only for curl, it should be removed when passing url to browser
+    filtered_archive_url="http://web.archive.org/cdx/search/cdx?url=*.${domain}\
+&collapse=urlkey&filter=original:.*\.${domain}(:\d\{1,5\})?/?$"
+
     # If there are no data transfer, even 1 byte (speed-limit) transfer
-    # in 60 seconds (speed-time) abort connection 
-    subs=$(curl -s \
-        "http://web.archive.org/cdx/search/cdx?url=*.${domain}/&collapse=urlkey&fl=original" \
-        --speed-time 60 --speed-limit 1 | grep -P -o "$domain_specific_regex" | sort -u)
-    if [[ ${subs[0]} == '' ]]; then
+    # in 60 seconds (speed-time) or data transfer took more than 2 min (max-time)
+    # abort connection 
+    wayback_response=$(curl -s --speed-time 60 --speed-limit 1 --max-time 120 "$archive_url" )
+    exit_status=$?
+    
+    # Try filtered search if connection was intentially aborted due to timing reasons
+    if [[ $exit_status == '28' ]]; then
         web_archive_error="true"
         warning="true"
-    else
-        f_parsing "Web archive" "${subs[@]}"
+        filtered_wayback_response=$(curl -s --speed-time 60 --speed-limit 1 "$filtered_archive_url")
     fi
+
+    subs=$(echo "$wayback_response" | grep -P -o "$domain_specific_regex" | sort -u)
+    filtered_search_subs=$(echo "$filtered_wayback_response" | \
+        grep -P -o "$domain_specific_regex" | sort -u)
+    subs=(${subs[@]} ${filtered_subs[@]})
+
+    f_parsing "Web archive" "${subs[@]}"
 }
 
 f_hackertarget () {
@@ -737,7 +756,7 @@ if [[ $ip_input != "True" ]]; then
         elif [[ $resolve_error != '' ]]; then
             echo "Some subdomains are not resolved due to DNS communication errors" 
         elif [[ $web_archive_error != '' ]]; then
-            echo "Troubles with Wayback Machine"
+            echo "Troubles with Wayback Machine timings"
         fi
     fi
     

@@ -327,7 +327,6 @@ f_ip_parsing () {
                    | grep -P -o "\S*$" | head -n 1)
     	f_output "false" "true" "$ip" "$inetnum" "${netname}_${country}"
     done
-    
 }
 
 f_print_help () {
@@ -540,9 +539,6 @@ f_statistic () {
 
     subdomains_count="${#effective_subdomains[@]}"
     f_output "false" "true" "active domains" "$subdomains_count"
-
-    ip_blocks_count="${#ip_ranges[@]}"
-    f_output "false" "true" "internet blocks" "$ip_blocks_count"
     f_output "false" "true" "start date" "$start_date"
     f_output "false" "true" "stop date" "$(date)"
 }

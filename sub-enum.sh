@@ -280,7 +280,7 @@ f_securitytrails () {
         response=$(curl -s "https://api.securitytrails.com/v1/domain/${domain}"`
             `"/subdomains?chilren_only=flase" -H "apikey: $api_key")
 
-        raw_subdomains=$(echo $response | grep -P -o '\[.*\]' | sed 's/,//g' \
+        raw_subdomains=$(echo $response | grep -P -o '\[.*\]' | sed 's/,/\n/g' \
             | sed 's/\[//g' | sed 's/\]//g')
         for raw_subdomain in ${raw_subdomains[@]}; do
             sub="$(echo $raw_subdomain | sed 's/"//g').$domain"
@@ -300,7 +300,7 @@ f_virustotal () {
     if [[ "$api_key" != '' ]]; then
         response=$(curl -s --header "x-apikey: $api_key" \
             "https://www.virustotal.com/api/v3/domains/${domain}/subdomains?limit=1000")
-        subs=$(echo "$response" | grep '"id"' | cut -d '"' -f4)
+        subs=$(echo "$response" | grep -P -o "$domain_regex" | grep $domain | sort -u)
         f_parsing "VirusTotal" "${subs[@]}"
     fi
 }

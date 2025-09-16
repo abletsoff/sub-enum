@@ -305,6 +305,12 @@ f_virustotal () {
     fi
 }
 
+f_assetfinder () {
+    f_status "Assetfinder tool"
+    subs=$(assetfinder $domain | sort -u)
+    f_parsing "Assetfinder" "${subs[@]}"
+}
+
 f_dnssec_check () {
     response=$(dig +dnssec +noall +answer $domain)
     if [[ $(echo "$response" | grep "RRSIG") != '' ]]; then
@@ -709,6 +715,7 @@ if [[ $ip_input != "True" ]]; then
         f_ptr_lookup "${ip_addresses[@]}"
     fi
     if [[ $check == "true" && $apis_check == "true" ]]; then
+            f_assetfinder
             f_virustotal
             f_hackertarget
             f_securitytrails
@@ -722,6 +729,7 @@ if [[ $ip_input != "True" ]]; then
         f_zone_transfer
         f_web_archive
         if [[ $apis_check = "true" ]]; then
+            f_assetfinder
             f_virustotal
             f_hackertarget
             f_securitytrails
